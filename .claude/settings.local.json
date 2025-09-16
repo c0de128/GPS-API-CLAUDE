@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(uv:*)",
+      "Bash(git clone:*)",
+      "Bash(claude mcp add:*)",
+      "Bash(claude mcp:*)",
+      "WebFetch(domain:ui.shadcn.com)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(pnpm:*)",
+      "Bash(npx shadcn@latest mcp init:*)",
+      "Bash(npx shadcn:*)",
+      "Bash(pkill:*)",
+      "Bash(find:*)",
+      "Bash(npx tsc:*)",
+      "mcp__shadcn__search_items_in_registries",
+      "mcp__shadcn__get_item_examples_from_registries",
+      "Bash(curl:*)",
+      "Bash(for i in {1..5})",
+      "Bash(do echo \"Request $i:\")",
+      "Bash(done)",
+      "mcp__shadcn__get_add_command_for_items",
+      "Read(//c/Users/KevinMcKay/Downloads/**)",
+      "WebFetch(domain:openrouteservice.org)",
+      "WebSearch",
+      "WebFetch(domain:giscience.github.io)",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git config:*)",
+      "Bash(git add:*)",
+      "Bash(git reset:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
