@@ -1,0 +1,71 @@
+{
+  "agents": {
+    "technical-consultant": {
+      "name": "Technical Consultant",
+      "description": "Expert technical consultant for full-stack web development architecture and technology recommendations",
+      "role": "technical-consultant",
+      "prompt_file": "prompt-technical-consultant.txt",
+      "documentation": "technical-consultant.md",
+      "capabilities": [
+        "technology-stack-analysis",
+        "architecture-design",
+        "performance-optimization",
+        "security-assessment",
+        "scalability-planning",
+        "risk-assessment",
+        "implementation-roadmap"
+      ],
+      "expertise_domains": [
+        "web-development",
+        "mobile-development",
+        "real-time-systems",
+        "gps-mapping",
+        "api-design",
+        "database-design",
+        "cloud-deployment",
+        "security-privacy"
+      ],
+      "output_format": "structured-technical-report",
+      "project_context": {
+        "project_name": "GPS Trip Tracker",
+        "current_stack": {
+          "frontend": ["React 18", "TypeScript", "Vite", "shadcn/ui", "Tailwind CSS", "Leaflet"],
+          "backend": ["Node.js", "Express", "partial implementation"],
+          "database": ["IndexedDB", "localStorage", "needs completion"],
+          "deployment": ["static hosting", "needs optimization"]
+        },
+        "key_features": [
+          "real-time GPS tracking",
+          "trip recording and management",
+          "route replay",
+          "mobile-first design",
+          "privacy-focused local storage"
+        ],
+        "technical_challenges": [
+          "real-time data processing",
+          "mobile battery optimization",
+          "offline functionality",
+          "geolocation compliance",
+          "scalable architecture"
+        ]
+      },
+      "usage_scenarios": [
+        "new-feature-planning",
+        "technology-evaluation",
+        "architecture-review",
+        "performance-troubleshooting",
+        "security-assessment",
+        "scalability-planning",
+        "deployment-optimization"
+      ],
+      "integration_notes": "Use for high-level technical decisions, architecture planning, and technology stack evaluations. Consult before major feature implementations or technology changes."
+    }
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "created": "2025-01-16",
+    "project": "GPS Trip Tracker",
+    "description": "Sub-agent configurations for specialized technical consulting roles",
+    "usage": "Reference these configurations when invoking specialized sub-agents for technical guidance"
+  }
+}

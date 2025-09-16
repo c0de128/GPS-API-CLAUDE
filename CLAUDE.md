@@ -72,3 +72,6 @@ Core interfaces in `src/types/index.ts`:
 ### MCP Servers Available
 - **augments-mcp-server**: Framework documentation and examples
 - **shadcn**: UI component management and installation
+
+### Claude Sub-Agents Available
+- **Technical Consultant** (`/.claude/sub-agents/`): Expert technical consulting for architecture, technology stack recommendations, performance optimization, and scalability planning. Use for major technical decisions and architectural reviews.
