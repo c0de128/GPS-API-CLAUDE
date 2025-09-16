@@ -18,6 +18,9 @@ build/
 .env.test
 .env.production
 .env.*
+
+# Exception: Allow .env.example template
+!.env.example
 *.key
 *.pem
 *.p12
@@ -153,10 +156,10 @@ api-server/dist/
 api-server/.env
 api-server/.env.*
 
-# MCP server
-augments-mcp-server/node_modules/
+# MCP server (handled as submodule or separate repo)
 augments-mcp-server/.env
 augments-mcp-server/.env.*
+augments-mcp-server/node_modules/
 
 # Logs
 logs

@@ -69,8 +69,8 @@ gps-tracking-app/
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd gps-tracking-app
+   git clone https://github.com/c0de128/GPS-API-CLAUDE.git
+   cd GPS-API-CLAUDE
    ```
 
 2. **Install dependencies**
@@ -78,15 +78,61 @@ gps-tracking-app/
    npm install
    ```
 
-3. **Start development server**
+3. **Configure environment variables**
+   ```bash
+   # Copy the environment template
+   cp .env.example .env
+
+   # Edit .env and add your API keys
+   # Get OpenRouteService API key from: https://openrouteservice.org/dev/#/signup
+   ```
+
+4. **Start development server**
    ```bash
    npm run dev
    ```
 
-4. **Open in browser**
+5. **Open in browser**
    ```
    http://localhost:3000
    ```
+
+## 🔐 Security & Environment Setup
+
+### Required Environment Variables
+
+Create a `.env` file in the root directory with the following variables:
+
+```bash
+# OpenRouteService API Configuration
+VITE_OPENROUTESERVICE_TOKEN=your_openrouteservice_api_key_here
+
+# Admin API Key for managing the GPS API server
+VITE_ADMIN_API_KEY=your_secure_admin_key_here
+
+# API Server Configuration
+VITE_API_BASE_URL=http://localhost:3001
+```
+
+### Getting API Keys
+
+1. **OpenRouteService API Key** (Required for route planning and geocoding)
+   - Visit: https://openrouteservice.org/dev/#/signup
+   - Sign up for a free developer account
+   - Copy your API key to `VITE_OPENROUTESERVICE_TOKEN`
+
+2. **Admin API Key** (Required for API server management)
+   - Generate a secure random string
+   - Use a password generator or run: `openssl rand -base64 32`
+   - Add to `VITE_ADMIN_API_KEY`
+
+### Security Best Practices
+
+- ✅ **Never commit `.env` files** - Already excluded in `.gitignore`
+- ✅ **Use HTTPS in production** - Required for Geolocation API
+- ✅ **Environment variables secured** - No hardcoded secrets in source code
+- ✅ **API keys protected** - Environment-based configuration
+- 🔒 **Production deployment** - Ensure environment variables are set securely
 
 ### Using the App
 
