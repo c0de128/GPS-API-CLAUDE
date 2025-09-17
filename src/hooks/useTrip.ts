@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { Trip, TripStatus, LocationData, Waypoint } from '@/types'
 import { calculateDistance } from '@/lib/utils'
 import { useStorage } from './useStorage'
+import { geocodingService } from '@/services/geocodingService'
 
 export interface UseTripReturn {
   // Current trip state
@@ -11,7 +12,7 @@ export interface UseTripReturn {
   totalDistance: number
 
   // Actions
-  startTrip: (name: string, notes: string) => void
+  startTrip: (name: string, notes: string, type?: 'real' | 'demo') => void
   pauseTrip: () => void
   resumeTrip: () => void
   stopTrip: () => void
@@ -38,12 +39,13 @@ export function useTrip(): UseTripReturn {
   const generateId = () => `trip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
   // Start a new trip
-  const startTrip = useCallback((name: string, notes: string) => {
+  const startTrip = useCallback((name: string, notes: string, type: 'real' | 'demo' = 'real') => {
+    console.log('🎯 useTrip.startTrip called:', { name, notes, type })
     const now = Date.now()
     const newTrip: Trip = {
       id: generateId(),
       name: name.trim() || `Trip ${new Date().toLocaleDateString()}`,
-      type: 'real',
+      type,
       status: 'active',
       startTime: now,
       route: [],
@@ -60,6 +62,7 @@ export function useTrip(): UseTripReturn {
     setCurrentTrip(newTrip)
     setRoutePoints([])
     setTotalDistance(0)
+    console.log('🎯 useTrip.startTrip: Trip created', { tripId: newTrip.id, type: newTrip.type, status: newTrip.status })
   }, [])
 
   // Pause current trip
@@ -88,13 +91,46 @@ export function useTrip(): UseTripReturn {
   const stopTrip = useCallback(async () => {
     if (!currentTrip) return
 
+    const endLocation = routePoints.length > 0 ? routePoints[routePoints.length - 1] : undefined
+
+    // Resolve addresses and calculate metadata
+    console.log('Resolving trip addresses and calculating metadata...')
+
+    let addresses = { startAddress: '', endAddress: '' }
+    let locationMetadata = undefined
+
+    try {
+      // Resolve addresses
+      addresses = await geocodingService.resolveTripAddresses(
+        currentTrip.startLocation,
+        endLocation
+      )
+      console.log('Resolved addresses:', addresses)
+
+      // Calculate location metadata
+      locationMetadata = geocodingService.calculateLocationMetadata(routePoints)
+      console.log('Location metadata:', locationMetadata)
+    } catch (error) {
+      console.warn('Failed to resolve addresses or calculate metadata:', error)
+      // Use defaults if resolution fails
+      addresses = {
+        startAddress: geocodingService.getDefaultStartAddress(),
+        endAddress: geocodingService.getDefaultEndAddress()
+      }
+    }
+
     const completedTrip: Trip = {
       ...currentTrip,
       status: 'completed',
       endTime: Date.now(),
-      endLocation: routePoints.length > 0 ? routePoints[routePoints.length - 1] : undefined,
+      endLocation,
+      startAddress: addresses.startAddress,
+      endAddress: addresses.endAddress,
       route: [...routePoints],
       totalDistance,
+      locationMetadata,
+      // Include route segments for demo trips
+      routeSegments: currentTrip.demoConfig?.route,
       updatedAt: Date.now()
     }
 
@@ -103,6 +139,7 @@ export function useTrip(): UseTripReturn {
     // Save to storage
     try {
       await saveTrip(completedTrip)
+      console.log('Trip saved successfully with enhanced data')
     } catch (error) {
       console.error('Failed to save completed trip:', error)
     }
@@ -121,10 +158,23 @@ export function useTrip(): UseTripReturn {
 
   // Add a route point (automatic tracking)
   const addRoutePoint = useCallback((location: LocationData) => {
-    if (!currentTrip || currentTrip.status !== 'active') return
+    console.log('🎯 useTrip.addRoutePoint called:', { location, tripStatus: currentTrip?.status, tripId: currentTrip?.id })
+
+    if (!currentTrip || currentTrip.status !== 'active') {
+      console.log('❌ useTrip.addRoutePoint: No active trip or trip not active', {
+        hasTrip: !!currentTrip,
+        status: currentTrip?.status
+      })
+      return
+    }
 
     setRoutePoints(prev => {
       const newPoints = [...prev, location]
+      console.log('📍 useTrip.addRoutePoint: Adding point', {
+        previousCount: prev.length,
+        newCount: newPoints.length,
+        location: { lat: location.latitude, lng: location.longitude }
+      })
 
       // Calculate new total distance
       if (prev.length > 0) {
@@ -135,7 +185,24 @@ export function useTrip(): UseTripReturn {
           location.latitude,
           location.longitude
         )
-        setTotalDistance(prevDistance => prevDistance + distance)
+        console.log('📏 useTrip.addRoutePoint: Distance calculation', {
+          from: { lat: lastPoint.latitude, lng: lastPoint.longitude },
+          to: { lat: location.latitude, lng: location.longitude },
+          distanceMeters: distance,
+          distanceFeet: distance * 3.28084
+        })
+
+        setTotalDistance(prevDistance => {
+          const newTotal = prevDistance + distance
+          console.log('📊 useTrip.addRoutePoint: Total distance updated', {
+            previousTotal: prevDistance,
+            addedDistance: distance,
+            newTotal
+          })
+          return newTotal
+        })
+      } else {
+        console.log('📏 useTrip.addRoutePoint: First point, no distance calculation')
       }
 
       return newPoints

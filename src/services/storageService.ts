@@ -208,7 +208,9 @@ export class StorageService {
 
     return allTrips.filter(trip =>
       trip.name.toLowerCase().includes(searchQuery) ||
-      trip.notes.toLowerCase().includes(searchQuery)
+      trip.notes.toLowerCase().includes(searchQuery) ||
+      trip.startAddress?.toLowerCase().includes(searchQuery) ||
+      trip.endAddress?.toLowerCase().includes(searchQuery)
     )
   }
 
@@ -388,9 +390,33 @@ export class StorageService {
   async backupToLocalStorage(): Promise<void> {
     try {
       const data = await this.exportAllData()
+
+      // Check if data is too large for localStorage (limit to ~4MB)
+      const dataSize = new Blob([data]).size
+      const maxSize = 4 * 1024 * 1024 // 4MB
+
+      if (dataSize > maxSize) {
+        console.warn(`Backup data too large (${Math.round(dataSize / 1024)}KB), skipping localStorage backup`)
+        return
+      }
+
+      // Try to store, but handle quota errors gracefully
       localStorage.setItem(`${DB_NAME}_backup`, data)
+      console.log(`Backup stored successfully (${Math.round(dataSize / 1024)}KB)`)
     } catch (error) {
-      console.warn('Failed to backup to localStorage:', error)
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        console.warn('localStorage quota exceeded, clearing old backup and retrying...')
+        try {
+          // Clear the existing backup and try again
+          localStorage.removeItem(`${DB_NAME}_backup`)
+          // Don't retry to avoid infinite loop - just log the issue
+          console.warn('Backup disabled due to storage constraints')
+        } catch (clearError) {
+          console.warn('Failed to clear localStorage:', clearError)
+        }
+      } else {
+        console.warn('Failed to backup to localStorage:', error)
+      }
     }
   }
 

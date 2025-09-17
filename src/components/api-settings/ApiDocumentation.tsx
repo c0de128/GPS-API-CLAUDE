@@ -44,7 +44,7 @@ export function ApiDocumentation() {
   useEffect(() => {
     const fetchApiDocs = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api')
+        const response = await fetch('http://localhost:3003/api')
         const data = await response.json()
         setApiDocs(data)
       } catch (error) {
@@ -58,7 +58,7 @@ export function ApiDocumentation() {
   const codeExamples = {
     javascript: {
       'gps-status': `// Get GPS Status
-const response = await fetch('http://localhost:3001/api/v1/gps/status', {
+const response = await fetch('http://localhost:3003/api/v1/gps/status', {
   headers: {
     'X-API-Key': 'your-api-key-here'
   }
@@ -75,7 +75,7 @@ const locationData = {
   speed: 25
 };
 
-const response = await fetch('http://localhost:3001/api/v1/gps/location', {
+const response = await fetch('http://localhost:3003/api/v1/gps/location', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -91,7 +91,7 @@ const tripData = {
   name: 'My Adventure Trip'
 };
 
-const response = await fetch('http://localhost:3001/api/v1/trips', {
+const response = await fetch('http://localhost:3003/api/v1/trips', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -108,7 +108,7 @@ const trip = await response.json();`
 
 # Get GPS Status
 response = requests.get(
-    'http://localhost:3001/api/v1/gps/status',
+    'http://localhost:3003/api/v1/gps/status',
     headers={'X-API-Key': 'your-api-key-here'}
 )
 
@@ -126,7 +126,7 @@ location_data = {
 }
 
 response = requests.post(
-    'http://localhost:3001/api/v1/gps/location',
+    'http://localhost:3003/api/v1/gps/location',
     headers={
         'Content-Type': 'application/json',
         'X-API-Key': 'your-api-key-here'
@@ -144,7 +144,7 @@ trip_data = {
 }
 
 response = requests.post(
-    'http://localhost:3001/api/v1/trips',
+    'http://localhost:3003/api/v1/trips',
     headers={
         'Content-Type': 'application/json',
         'X-API-Key': 'your-api-key-here'
@@ -158,12 +158,12 @@ trip = response.json()`
     curl: {
       'gps-status': `# Get GPS Status
 curl -X GET \\
-  http://localhost:3001/api/v1/gps/status \\
+  http://localhost:3003/api/v1/gps/status \\
   -H "X-API-Key: your-api-key-here"`,
 
       'gps-update': `# Update GPS Location
 curl -X POST \\
-  http://localhost:3001/api/v1/gps/location \\
+  http://localhost:3003/api/v1/gps/location \\
   -H "X-API-Key: your-api-key-here" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -175,7 +175,7 @@ curl -X POST \\
 
       'trips-create': `# Create a New Trip
 curl -X POST \\
-  http://localhost:3001/api/v1/trips \\
+  http://localhost:3003/api/v1/trips \\
   -H "X-API-Key: your-api-key-here" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -421,7 +421,7 @@ curl -X POST \\
           <div>
             <label className="text-sm font-medium text-muted-foreground">Connection URL</label>
             <code className="block text-sm bg-muted p-2 rounded mt-1">
-              ws://localhost:3001/ws
+              ws://localhost:3003/ws
             </code>
           </div>
 
@@ -457,7 +457,7 @@ curl -X POST \\
             <label className="text-sm font-medium text-muted-foreground">Example JavaScript Client</label>
             <div className="bg-muted p-3 rounded-lg mt-1">
               <pre className="text-sm overflow-x-auto">
-                <code>{`const ws = new WebSocket('ws://localhost:3001/ws');
+                <code>{`const ws = new WebSocket('ws://localhost:3003/ws');
 
 ws.onopen = () => {
   // Authenticate

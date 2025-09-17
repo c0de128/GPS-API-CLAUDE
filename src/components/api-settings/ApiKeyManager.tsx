@@ -42,7 +42,7 @@ export function ApiKeyManager({}: ApiKeyManagerProps) {
   // Fetch API keys from the server
   const fetchApiKeys = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/v1/admin/keys', {
+      const response = await fetch('http://localhost:3003/api/v1/admin/keys', {
         headers: {
           'X-API-Key': ADMIN_API_KEY
         }
@@ -78,7 +78,7 @@ export function ApiKeyManager({}: ApiKeyManagerProps) {
     if (!newKeyName.trim()) return
 
     try {
-      const response = await fetch('http://localhost:3001/api/v1/admin/keys', {
+      const response = await fetch('http://localhost:3003/api/v1/admin/keys', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,7 +88,7 @@ export function ApiKeyManager({}: ApiKeyManagerProps) {
           name: newKeyName,
           permissions: newKeyPermissions,
           rateLimit: newKeyRateLimit,
-          origins: ['http://localhost:3000', 'http://localhost:5173']
+          origins: ['http://localhost:3000']
         })
       })
 

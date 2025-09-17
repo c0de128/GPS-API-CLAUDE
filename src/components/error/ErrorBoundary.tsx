@@ -2,6 +2,8 @@ import React, { Component, ErrorInfo, ReactNode } from 'react'
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { sanitizeObject } from '@/utils/inputValidation'
+import { handleError, createAppError } from '@/utils/errorHandler'
 
 interface Props {
   children: ReactNode
@@ -26,45 +28,76 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
+    // Sanitize error data before logging
+    const sanitizedError = {
+      ...error,
+      message: error.message?.substring(0, 500) || 'Unknown error', // Limit message length
+      stack: error.stack?.substring(0, 2000) || undefined // Limit stack trace
+    }
+
+    const sanitizedErrorInfo = {
+      componentStack: errorInfo.componentStack?.substring(0, 1000) || undefined
+    }
+
+    console.error('ErrorBoundary caught an error:', sanitizedError.message)
 
     this.setState({
-      error,
-      errorInfo
+      error: sanitizedError,
+      errorInfo: sanitizedErrorInfo
     })
+
+    // Use centralized error handler
+    handleError(createAppError('React Error Boundary', {
+      severity: 'high',
+      category: 'unknown',
+      details: sanitizeObject({
+        originalMessage: sanitizedError.message,
+        componentStack: sanitizedErrorInfo.componentStack,
+        timestamp: Date.now()
+      }),
+      recoverable: true
+    }), 'ErrorBoundary')
 
     // Call custom error handler if provided
     if (this.props.onError) {
-      this.props.onError(error, errorInfo)
+      try {
+        this.props.onError(sanitizedError, sanitizedErrorInfo)
+      } catch (handlerError) {
+        console.error('Error in custom error handler:', handlerError)
+      }
     }
 
-    // Log to monitoring service (you can replace this with your preferred service)
-    this.logErrorToService(error, errorInfo)
+    // Log to monitoring service
+    this.logErrorToService(sanitizedError, sanitizedErrorInfo)
   }
 
   private logErrorToService(error: Error, errorInfo: ErrorInfo) {
-    const errorData = {
-      message: error.message,
-      stack: error.stack,
-      componentStack: errorInfo.componentStack,
+    // Sanitize all error data before storage
+    const errorData = sanitizeObject({
+      id: `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      message: error.message?.substring(0, 200) || 'Unknown error',
+      componentStack: errorInfo.componentStack?.substring(0, 500) || undefined,
       timestamp: new Date().toISOString(),
-      url: window.location.href,
-      userAgent: navigator.userAgent
-    }
+      url: window.location.pathname, // Don't include query params for privacy
+      userAgent: navigator.userAgent?.substring(0, 100) || 'Unknown', // Limit UA string
+      severity: 'boundary_error'
+    })
 
     // Store in localStorage for now (replace with actual monitoring service)
     try {
-      const existingErrors = JSON.parse(localStorage.getItem('app_errors') || '[]')
+      const storageKey = 'app_boundary_errors'
+      const existingErrors = JSON.parse(localStorage.getItem(storageKey) || '[]')
       existingErrors.push(errorData)
 
-      // Keep only last 50 errors
-      if (existingErrors.length > 50) {
-        existingErrors.splice(0, existingErrors.length - 50)
+      // Keep only last 20 errors to prevent storage bloat
+      if (existingErrors.length > 20) {
+        existingErrors.splice(0, existingErrors.length - 20)
       }
 
-      localStorage.setItem('app_errors', JSON.stringify(existingErrors))
-    } catch (e) {
-      console.error('Failed to log error to localStorage:', e)
+      localStorage.setItem(storageKey, JSON.stringify(existingErrors))
+    } catch (storageError) {
+      // Fail silently for storage errors to prevent infinite loops
+      console.warn('Failed to log error to localStorage')
     }
   }
 
@@ -110,17 +143,19 @@ export class ErrorBoundary extends Component<Props, State> {
                     </div>
                     {this.state.error.stack && (
                       <div>
-                        <strong>Stack:</strong>
-                        <pre className="whitespace-pre-wrap break-all bg-background p-2 rounded border mt-1">
-                          {this.state.error.stack}
+                        <strong>Stack (truncated):</strong>
+                        <pre className="whitespace-pre-wrap break-all bg-background p-2 rounded border mt-1 max-h-32 overflow-y-auto">
+                          {this.state.error.stack.substring(0, 1000)}
+                          {this.state.error.stack.length > 1000 && '\n... [truncated]'}
                         </pre>
                       </div>
                     )}
                     {this.state.errorInfo?.componentStack && (
                       <div>
-                        <strong>Component Stack:</strong>
-                        <pre className="whitespace-pre-wrap break-all bg-background p-2 rounded border mt-1">
-                          {this.state.errorInfo.componentStack}
+                        <strong>Component Stack (truncated):</strong>
+                        <pre className="whitespace-pre-wrap break-all bg-background p-2 rounded border mt-1 max-h-32 overflow-y-auto">
+                          {this.state.errorInfo.componentStack.substring(0, 500)}
+                          {this.state.errorInfo.componentStack.length > 500 && '\n... [truncated]'}
                         </pre>
                       </div>
                     )}

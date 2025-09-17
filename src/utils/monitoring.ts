@@ -72,12 +72,16 @@ class AppMonitoring {
       })
     })
 
-    // Console error override
+    // Console error override with sanitization
     const originalConsoleError = console.error
     console.error = (...args) => {
+      // Sanitize arguments to prevent sensitive data leakage
+      const sanitizedArgs = args.map(arg => this.sanitizeLogData(arg))
+
       this.logError({
-        message: args.join(' '),
-        details: { type: 'console_error', args }
+        message: sanitizedArgs.join(' '),
+        details: { type: 'console_error', argsCount: args.length }
+        // Don't store raw args to prevent sensitive data exposure
       })
       originalConsoleError.apply(console, args)
     }
@@ -208,10 +212,13 @@ class AppMonitoring {
     this.sendToAnalytics('user_action', userAction)
   }
 
-  // GPS-specific logging
+  // GPS-specific logging with sanitization
   logGPSEvent(event: string, details?: any) {
+    // Sanitize GPS data to prevent location leakage in logs
+    const sanitizedDetails = this.sanitizeGPSData(details)
+
     this.logInfo(`GPS: ${event}`, {
-      ...details,
+      ...sanitizedDetails,
       category: 'gps'
     })
   }
@@ -307,6 +314,98 @@ class AppMonitoring {
     return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
+  // Sanitize sensitive data from logs
+  private sanitizeLogData(data: any): any {
+    if (data === null || data === undefined) return data
+
+    // Convert to string and check for sensitive patterns
+    const str = String(data)
+
+    // Patterns for sensitive data
+    const sensitivePatterns = [
+      /api[_-]?key/i,
+      /token/i,
+      /password/i,
+      /secret/i,
+      /authorization/i,
+      /bearer/i,
+      /x-api-key/i,
+      /gps_[a-z]+_[a-f0-9]+/i, // GPS API key pattern
+      /[a-f0-9]{32,}/i, // Long hex strings (likely keys)
+      /\b[A-Za-z0-9]{20,}\b/i // Long alphanumeric strings
+    ]
+
+    // Check if string contains sensitive patterns
+    for (const pattern of sensitivePatterns) {
+      if (pattern.test(str)) {
+        return '[REDACTED]'
+      }
+    }
+
+    // Truncate very long strings to prevent data dumps
+    if (typeof data === 'string' && data.length > 500) {
+      return data.substring(0, 500) + '... [truncated]'
+    }
+
+    // Recursively sanitize objects
+    if (typeof data === 'object') {
+      if (Array.isArray(data)) {
+        return data.map(item => this.sanitizeLogData(item))
+      }
+
+      const sanitized: any = {}
+      for (const key in data) {
+        // Skip sensitive keys
+        if (sensitivePatterns.some(pattern => pattern.test(key))) {
+          sanitized[key] = '[REDACTED]'
+        } else {
+          sanitized[key] = this.sanitizeLogData(data[key])
+        }
+      }
+      return sanitized
+    }
+
+    return data
+  }
+
+  // Sanitize GPS-specific data
+  private sanitizeGPSData(details: any): any {
+    if (!details) return details
+
+    const sanitized = { ...details }
+
+    // Always obfuscate exact coordinates to protect privacy
+    if (sanitized.latitude !== undefined) {
+      // Round to ~100m precision (3 decimal places)
+      sanitized.latitude = Math.round(sanitized.latitude * 1000) / 1000
+    }
+    if (sanitized.longitude !== undefined) {
+      sanitized.longitude = Math.round(sanitized.longitude * 1000) / 1000
+    }
+
+    // Remove or obfuscate detailed location data
+    if (sanitized.location && typeof sanitized.location === 'object') {
+      sanitized.location = {
+        hasLocation: true,
+        accuracy: sanitized.location.accuracy ? Math.round(sanitized.location.accuracy) : undefined
+      }
+    } else if (sanitized.location) {
+      sanitized.location = '[Location data redacted for privacy]'
+    }
+
+    // Remove detailed route information
+    if (sanitized.route && Array.isArray(sanitized.route)) {
+      sanitized.route = `[Route with ${sanitized.route.length} points]`
+    }
+
+    // Remove waypoint details
+    if (sanitized.waypoints && Array.isArray(sanitized.waypoints)) {
+      sanitized.waypoints = `[${sanitized.waypoints.length} waypoints]`
+    }
+
+    return this.sanitizeLogData(sanitized)
+  }
+
   private storeLog(type: string, log: any) {
     try {
       const existing = this.getLogs(type as any)
@@ -332,10 +431,13 @@ class AppMonitoring {
   }
 
   private sendToAnalytics(eventType: string, data: any) {
+    // Sanitize data before sending to analytics
+    const sanitizedData = this.sanitizeLogData(data)
+
     // This is where you would send to your analytics service
-    // For now, we'll just log it
+    // For now, we'll just log it in development
     if (!import.meta.env.PROD) {
-      console.log(`[Analytics] ${eventType}:`, data)
+      console.log(`[Analytics] ${eventType}:`, sanitizedData)
     }
 
     // Example: Send to Google Analytics, Mixpanel, etc.

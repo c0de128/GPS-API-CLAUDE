@@ -10,6 +10,7 @@ import SettingsPage from './components/layout/SettingsPage'
 import DiagnosticsPage from './components/debug/DiagnosticsPage'
 import { ApiTestDashboard } from './components/testing/ApiTestDashboard'
 import { ApiSettingsPage } from './components/api-settings/ApiSettingsPage'
+import { ApiTestingPage } from './components/api-testing/ApiTestingPage'
 import { useMonitoring } from './utils/monitoring'
 import { useEffect } from 'react'
 
@@ -52,6 +53,9 @@ function App() {
             } />
             <Route path="/api-settings" element={
               <ErrorBoundary><ApiSettingsPage /></ErrorBoundary>
+            } />
+            <Route path="/api-testing" element={
+              <ErrorBoundary><ApiTestingPage /></ErrorBoundary>
             } />
           </Routes>
         </main>

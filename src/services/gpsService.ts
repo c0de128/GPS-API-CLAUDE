@@ -1,6 +1,14 @@
 import { LocationData, SpeedData, GPSState } from '@/types'
 import { calculateSpeed, convertSpeed } from '@/lib/utils'
 import { monitoring } from '@/utils/monitoring'
+import { ApiClient } from './apiClient'
+
+// Initialize API client for sharing GPS data
+const apiClient = new ApiClient({
+  baseUrl: 'http://localhost:3003',
+  websocketUrl: 'ws://localhost:3003/ws',
+  apiKey: 'gps_dev_1452bec4359a449aa8b35c97adcbb900' // Development key
+})
 
 export class GPSService {
   private watchId: number | null = null
@@ -13,10 +21,34 @@ export class GPSService {
     error: null,
     permission: 'unknown'
   }
+  private permissionCheckInterval: NodeJS.Timeout | null = null
+  private isDestroyed = false
+  private updateLock = false
+
+  // GPS update throttling - only process location updates every 2 seconds
+  private lastProcessedTime: number = 0
+  private processingInterval: number = 2000 // 2 seconds in milliseconds
+
+  // API update throttling - only send to API every 2 seconds
+  private lastApiSentTime: number = 0
+  private apiSendInterval: number = 2000 // 2 seconds in milliseconds
+
+  // Trip recording throttling - only record location data every 2 seconds for trips
+  private lastRecordedLocation: LocationData | null = null
+  private lastRecordTime: number = 0
+  private recordingInterval: number = 2000 // 2 seconds in milliseconds
+  private tripRecordingListeners: Set<(location: LocationData) => void> = new Set()
 
   constructor() {
     this.checkPermission()
     monitoring.logGPSEvent('GPS service initialized')
+
+    // Set up periodic permission check
+    this.permissionCheckInterval = setInterval(() => {
+      if (!this.isDestroyed) {
+        this.checkPermission()
+      }
+    }, 30000) // Check every 30 seconds
   }
 
   // Check current geolocation permission status
@@ -27,19 +59,42 @@ export class GPSService {
     }
 
     try {
-      const result = await navigator.permissions.query({ name: 'geolocation' })
-      this.updateState({ permission: result.state as any })
+      const result = await navigator.permissions.query({ name: 'geolocation' as PermissionName })
+
+      // Properly type-check permission state
+      const permissionState = this.mapPermissionState(result.state)
+      this.updateState({ permission: permissionState })
 
       result.addEventListener('change', () => {
-        this.updateState({ permission: result.state as any })
+        const updatedState = this.mapPermissionState(result.state)
+        this.updateState({ permission: updatedState })
       })
     } catch (error) {
       this.updateState({ permission: 'unknown' })
     }
   }
 
+  // Map PermissionState to our GPSState permission type safely
+  private mapPermissionState(state: PermissionState): 'granted' | 'denied' | 'prompt' | 'unknown' {
+    switch (state) {
+      case 'granted':
+        return 'granted'
+      case 'denied':
+        return 'denied'
+      case 'prompt':
+        return 'prompt'
+      default:
+        return 'unknown'
+    }
+  }
+
   // Subscribe to GPS state changes
   subscribe(listener: (state: GPSState) => void): () => void {
+    if (this.isDestroyed) {
+      console.warn('Cannot subscribe to destroyed GPS service')
+      return () => {}
+    }
+
     this.listeners.add(listener)
     listener(this.currentState) // Send current state immediately
 
@@ -83,7 +138,7 @@ export class GPSService {
     const options: PositionOptions = {
       enableHighAccuracy: true,
       timeout: 10000,
-      maximumAge: 1000 // Accept locations up to 1 second old
+      maximumAge: 2000 // Accept locations up to 2 seconds old - ensures 2-second minimum update interval
     }
 
     this.watchId = navigator.geolocation.watchPosition(
@@ -116,7 +171,22 @@ export class GPSService {
 
   // Handle successful location update
   private handleLocationUpdate(position: GeolocationPosition): void {
-    monitoring.logGPSEvent('Location update received', { accuracy: position.coords.accuracy })
+    // Prevent race conditions with update lock
+    if (this.updateLock || this.isDestroyed) {
+      return
+    }
+
+    // Throttle GPS updates to every 2 seconds
+    const now = Date.now()
+    if (now - this.lastProcessedTime < this.processingInterval) {
+      return
+    }
+
+    this.updateLock = true
+    this.lastProcessedTime = now
+
+    try {
+      monitoring.logGPSEvent('Location update received', { accuracy: position.coords.accuracy })
 
     const newLocation: LocationData = {
       latitude: position.coords.latitude,
@@ -150,7 +220,7 @@ export class GPSService {
 
       this.speedHistory.push(speedData)
 
-      // Keep only recent speed data (last 100 readings)
+      // Keep only recent speed data (last 100 readings) to prevent memory leak
       if (this.speedHistory.length > 100) {
         this.speedHistory = this.speedHistory.slice(-100)
       }
@@ -161,6 +231,12 @@ export class GPSService {
       currentLocation: newLocation,
       error: null
     })
+
+    // Check if we should record this location for trip recording (5-second interval)
+    this.checkTripRecording(newLocation)
+    } finally {
+      this.updateLock = false
+    }
   }
 
   // Handle geolocation errors
@@ -280,10 +356,96 @@ export class GPSService {
   clearSession(): void {
     this.previousLocation = null
     this.speedHistory = []
+    this.lastRecordedLocation = null
+    this.lastRecordTime = 0
+  }
+
+  // Check if we should record this location for trip recording (2-second throttling)
+  private checkTripRecording(location: LocationData): void {
+    const now = Date.now()
+
+    // Record if this is the first location or if 2 seconds have passed
+    if (this.lastRecordTime === 0 || (now - this.lastRecordTime) >= this.recordingInterval) {
+      this.lastRecordedLocation = location
+      this.lastRecordTime = now
+
+      // Notify all trip recording listeners
+      this.tripRecordingListeners.forEach(listener => listener(location))
+
+      monitoring.logGPSEvent('Location recorded for trip', {
+        interval: now - this.lastRecordTime,
+        accuracy: location.accuracy
+      })
+    }
+  }
+
+  // Subscribe to trip recording updates (5-second throttled)
+  subscribeToTripRecording(listener: (location: LocationData) => void): () => void {
+    if (this.isDestroyed) {
+      console.warn('Cannot subscribe to destroyed GPS service')
+      return () => {}
+    }
+
+    this.tripRecordingListeners.add(listener)
+
+    // Send last recorded location immediately if available
+    if (this.lastRecordedLocation) {
+      listener(this.lastRecordedLocation)
+    }
+
+    return () => {
+      this.tripRecordingListeners.delete(listener)
+    }
+  }
+
+  // Get the last recorded location for trips
+  getLastRecordedLocation(): LocationData | null {
+    return this.lastRecordedLocation
+  }
+
+  // Set custom recording interval (for testing or different requirements)
+  setRecordingInterval(intervalMs: number): void {
+    this.recordingInterval = Math.max(1000, intervalMs) // Minimum 1 second
+    monitoring.logGPSEvent('Recording interval changed', { intervalMs })
+  }
+
+  // Cleanup method to prevent memory leaks
+  destroy(): void {
+    this.isDestroyed = true
+
+    // Stop tracking if active
+    if (this.watchId !== null) {
+      this.stopTracking()
+    }
+
+    // Clear permission check interval
+    if (this.permissionCheckInterval) {
+      clearInterval(this.permissionCheckInterval)
+      this.permissionCheckInterval = null
+    }
+
+    // Clear all listeners
+    this.listeners.clear()
+    this.tripRecordingListeners.clear()
+
+    // Clear speed history and trip recording data to free memory
+    this.speedHistory = []
+    this.previousLocation = null
+    this.lastRecordedLocation = null
+    this.lastRecordTime = 0
+
+    monitoring.logGPSEvent('GPS service destroyed')
   }
 
   // Add location data manually (for demo mode)
   addLocationData(location: LocationData): void {
+    // Throttle demo mode updates to every 2 seconds
+    const now = Date.now()
+    if (now - this.lastProcessedTime < this.processingInterval) {
+      return
+    }
+    this.lastProcessedTime = now
+
     // Calculate speed if we have a previous location
     let calculatedSpeed = 0
     if (this.previousLocation) {
@@ -306,13 +468,54 @@ export class GPSService {
 
       this.speedHistory.push(speedData)
 
-      // Keep only recent speed data (last 100 readings)
+      // Keep only recent speed data (last 100 readings) to prevent memory leak
       if (this.speedHistory.length > 100) {
         this.speedHistory = this.speedHistory.slice(-100)
       }
     }
 
     this.previousLocation = location
+
+    // Send location data to API server (async, non-blocking) - throttled to every 2 seconds
+    const apiNow = Date.now()
+    if (apiNow - this.lastApiSentTime >= this.apiSendInterval) {
+      this.lastApiSentTime = apiNow
+      this.sendLocationToAPI(location).catch(error => {
+        // Log API errors but don't interrupt the GPS service
+        console.warn('🔌 Failed to send location to API:', error.message)
+      })
+    }
+
+    // Also check trip recording for demo mode
+    this.checkTripRecording(location)
+  }
+
+  // Send location data to API server for external access
+  private async sendLocationToAPI(location: LocationData): Promise<void> {
+    try {
+      // Transform our LocationData to API format
+      const apiLocation = {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy: location.accuracy,
+        timestamp: location.timestamp,
+        altitude: location.altitude,
+        heading: location.heading,
+        speed: location.speed || 0
+      }
+
+      console.log('🔌 Sending location to API:', {
+        lat: apiLocation.latitude.toFixed(6),
+        lng: apiLocation.longitude.toFixed(6),
+        speed: apiLocation.speed
+      })
+
+      await apiClient.updateLocation(apiLocation)
+      console.log('✅ Location sent to API successfully')
+    } catch (error) {
+      // Re-throw for error handling in caller
+      throw new Error(`API communication failed: ${error}`)
+    }
   }
 }
 

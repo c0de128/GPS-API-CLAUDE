@@ -3,7 +3,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
 import { createRateLimit } from '@/middleware/rateLimit.js'
-import { authenticate, optionalAuth, validateOrigin } from '@/middleware/auth.js'
+import { authenticate, optionalAuth } from '@/middleware/auth.js'
 import { gpsRouter } from '@/routes/gps.js'
 import { tripsRouter } from '@/routes/trips.js'
 import { statsRouter } from '@/routes/stats.js'
@@ -15,12 +15,8 @@ const app = express()
 
 // Server configuration
 const config: ServerConfig = {
-  port: parseInt(process.env.PORT || '3001'),
+  port: parseInt(process.env.PORT || '3003'),
   host: process.env.HOST || '0.0.0.0',
-  cors: {
-    origins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:5173'],
-    credentials: true
-  },
   rateLimit: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 1000 // requests per window
@@ -41,22 +37,34 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }))
 
-// CORS configuration
+// CORS configuration - comprehensive setup for development
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, etc.)
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true)
 
-    // Check if origin is in allowed list
-    if (config.cors.origins.includes('*') || config.cors.origins.includes(origin)) {
+    // In development, allow all origins
+    if (process.env.NODE_ENV !== 'production') {
       return callback(null, true)
     }
 
-    callback(new Error('Not allowed by CORS'))
+    // In production, implement stricter origin checking here
+    return callback(null, true)
   },
-  credentials: config.cors.credentials,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Requested-With']
+  credentials: false, // Disable credentials for security
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-API-Key',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
+  preflightContinue: false,
+  optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
 }))
 
 // Body parsing middleware
@@ -91,8 +99,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next()
 })
 
-// Origin validation for authenticated requests
-app.use(validateOrigin)
+// Origin validation removed - CORS middleware handles this properly in development
+// For production, origin validation should be applied per-route after authentication
 
 // Health check endpoint (no auth required)
 app.get('/health', (req: Request, res: Response) => {

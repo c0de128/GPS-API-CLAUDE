@@ -1,18 +1,24 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
+import { Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useGPS } from '@/hooks/useGPS'
 import { useTrip } from '@/hooks/useTrip'
-import SpeedDashboard from './SpeedDashboard'
-import TripControls from './TripControls'
+import TrackingDashboard from './TrackingDashboard'
+import SystemStatusLine from './SystemStatusLine'
 import LiveMap from './LiveMap'
 import DemoTripForm from '@/components/demo/DemoTripForm'
-import DemoControls from '@/components/demo/DemoControls'
-import { DemoTripConfig } from '@/types'
+import { DemoTripConfig, LocationData } from '@/types'
+import { geocodingService } from '@/services/geocodingService'
+import { gpsService } from '@/services/gpsService'
 
 const TrackingPage: React.FC = () => {
-  const [speedUnit, setSpeedUnit] = useState<'mph' | 'kmh'>('mph')
+  const [speedUnit] = useState<'mph' | 'kmh'>('mph')
   const [showDemoForm, setShowDemoForm] = useState(false)
   const [demoConfig, setDemoConfig] = useState<DemoTripConfig | null>(null)
+  const [locationHistory, setLocationHistory] = useState<LocationData[]>([])
+  const [currentAddress, setCurrentAddress] = useState<string | null>(null)
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false)
+  const [followVehicle, setFollowVehicle] = useState(false) // Start with manual control
 
   // GPS and trip hooks
   const {
@@ -41,13 +47,16 @@ const TrackingPage: React.FC = () => {
     routePoints,
     totalDistance,
     startTrip,
-    pauseTrip,
-    resumeTrip,
     stopTrip,
-    updateTripName,
     addRoutePoint,
     isRecording
   } = useTrip()
+
+  // Store addRoutePoint in a ref to avoid infinite loops
+  const addRoutePointRef = useRef(addRoutePoint)
+  useEffect(() => {
+    addRoutePointRef.current = addRoutePoint
+  }, [addRoutePoint])
 
   // Auto-start GPS when trip becomes active
   useEffect(() => {
@@ -58,46 +67,145 @@ const TrackingPage: React.FC = () => {
     }
   }, [tripStatus, isTracking, startTracking, stopTracking])
 
-  // Add route points when location updates during active trip
+  // Update location history when location changes
   useEffect(() => {
-    if (currentLocation && isRecording && isTracking) {
-      addRoutePoint(currentLocation)
+    if (currentLocation) {
+      console.log('🎮 TrackingPage LOCATION UPDATE: New location received', {
+        location: { lat: currentLocation.latitude, lng: currentLocation.longitude },
+        isDemoMode,
+        isTracking,
+        timestamp: currentLocation.timestamp
+      })
+      setLocationHistory(prev => {
+        // Check if this location is already in history to prevent duplicates
+        const lastLocation = prev[prev.length - 1]
+        if (lastLocation &&
+            lastLocation.latitude === currentLocation.latitude &&
+            lastLocation.longitude === currentLocation.longitude &&
+            lastLocation.timestamp === currentLocation.timestamp) {
+          console.log('TrackingPage: Skipping duplicate location')
+          return prev
+        }
+
+        const newHistory = [...prev, currentLocation]
+        console.log('🎮 TrackingPage HISTORY: Added location to history, total count:', newHistory.length)
+        // Keep only last 100 locations to prevent memory issues
+        return newHistory.length > 100 ? newHistory.slice(-100) : newHistory
+      })
     }
-  }, [currentLocation, isRecording, isTracking, addRoutePoint])
+  }, [currentLocation, isDemoMode, isTracking])
+
+  // Subscribe to trip recording (5-second throttled) when recording a trip
+  useEffect(() => {
+    if (!isRecording) {
+      return
+    }
+
+    console.log('🎮 TrackingPage: Subscribing to 2-second trip recording', {
+      isRecording,
+      isTracking,
+      isDemoMode
+    })
+
+    const unsubscribe = gpsService.subscribeToTripRecording((location) => {
+      console.log('✅ TrackingPage: Adding throttled route point (2-second interval)', {
+        location: { lat: location.latitude, lng: location.longitude },
+        timestamp: location.timestamp,
+        isRecording
+      })
+      // Use ref to avoid infinite loop
+      addRoutePointRef.current(location)
+    })
+
+    return unsubscribe
+  }, [isRecording]) // Removed addRoutePoint from dependencies to prevent infinite loop
+
+  // Clear location history when tracking stops
+  useEffect(() => {
+    if (!isTracking && !isDemoMode) {
+      console.log('TrackingPage: Clearing location history (tracking stopped)')
+      setLocationHistory([])
+    }
+  }, [isTracking, isDemoMode])
+
+  // Clear location history when demo mode starts fresh
+  useEffect(() => {
+    if (isDemoMode && demoState?.isActive && demoState?.currentSegmentIndex === 0 && demoState?.positionInSegment === 0) {
+      console.log('TrackingPage: Clearing location history for fresh demo start')
+      setLocationHistory([])
+    }
+  }, [isDemoMode, demoState])
+
+  // Address resolution effect with debouncing
+  useEffect(() => {
+    if (!currentLocation || (!isTracking && !isDemoMode)) {
+      setCurrentAddress(null)
+      setIsResolvingAddress(false)
+      return
+    }
+
+    let timeoutId: NodeJS.Timeout
+
+    const resolveAddress = async () => {
+      setIsResolvingAddress(true)
+      try {
+        const address = await geocodingService.reverseGeocode(currentLocation)
+        setCurrentAddress(address)
+      } catch (error) {
+        console.warn('Failed to resolve address:', error)
+        setCurrentAddress(null)
+      } finally {
+        setIsResolvingAddress(false)
+      }
+    }
+
+    // Debounce address resolution to avoid excessive API calls
+    timeoutId = setTimeout(resolveAddress, 2000)
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }, [currentLocation, isTracking, isDemoMode])
 
   // Handle trip actions
   const handleStartTrip = async (name: string, notes: string) => {
     startTrip(name, notes)
   }
 
-  const handleStopTrip = () => {
-    stopTrip()
-    stopTracking()
-  }
-
-  const handlePauseTrip = () => {
-    pauseTrip()
-    stopTracking()
-  }
-
-  const handleResumeTrip = () => {
-    resumeTrip()
-    startTracking()
-  }
 
   // Demo trip handlers
   const handleStartDemo = (config: DemoTripConfig) => {
     setDemoConfig(config)
     startDemoMode(config)
     setShowDemoForm(false)
+    setFollowVehicle(true) // Auto-enable follow vehicle when demo starts
 
     // Start a demo trip in the trip system
-    startTrip(`Demo: ${config.startAddress} → ${config.endAddress}`, 'Demo trip simulation')
+    console.log('🎮 TrackingPage.handleStartDemo: Starting demo trip')
+    startTrip(`Demo: ${config.startAddress} → ${config.endAddress}`, 'Demo trip simulation', 'demo')
+  }
+
+  // Map control functions
+  const handleToggleFollowVehicle = () => {
+    setFollowVehicle(!followVehicle)
+    console.log('🗺️ TrackingPage: Toggle follow vehicle:', !followVehicle)
+  }
+
+  const handleRecenterMap = () => {
+    if (currentLocation) {
+      // We'll let the LiveMap component handle the actual recentering
+      // by temporarily enabling follow vehicle for one update
+      setFollowVehicle(true)
+      console.log('🗺️ TrackingPage: Recenter map requested')
+    }
   }
 
   const handleStopDemo = () => {
     stopDemoMode()
     setDemoConfig(null)
+    setLocationHistory([]) // Clear location history when demo stops
 
     // Stop the current trip
     if (currentTrip) {
@@ -124,125 +232,94 @@ const TrackingPage: React.FC = () => {
         </div>
       )}
 
-      {/* Speed Dashboard */}
+      {/* Comprehensive Dashboard */}
       <section>
-        <h2 className="text-lg font-medium mb-3 text-muted-foreground">Speed Monitor</h2>
-        <SpeedDashboard
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-medium text-muted-foreground">Real-Time Dashboard</h2>
+          <div className="flex items-center gap-2">
+            {tripStatus === 'planning' && (
+              <Button
+                onClick={() => {
+                  const name = `Trip ${new Date().toLocaleDateString()}`
+                  handleStartTrip(name, '')
+                }}
+                size="sm"
+                variant="default"
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Start New Trip
+              </Button>
+            )}
+            {!isDemoMode && !currentTrip && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDemoForm(true)}
+              >
+                Start Demo Trip
+              </Button>
+            )}
+          </div>
+        </div>
+        <SystemStatusLine
+          isTracking={isTracking}
+          error={error}
+          permission={permission}
+          tripStatus={tripStatus}
+          isDemoMode={isDemoMode}
+          routePoints={routePoints}
+        />
+        <TrackingDashboard
+          currentLocation={currentLocation}
           currentSpeed={currentSpeed}
           averageSpeed={averageSpeed}
           maxSpeed={maxSpeed}
-          unit={speedUnit}
+          speedUnit={speedUnit}
+          routePoints={routePoints}
+          totalDistance={totalDistance}
           isTracking={isTracking}
-          accuracy={currentLocation?.accuracy}
+          isDemoMode={isDemoMode}
+          demoState={demoState}
+          demoProgress={demoState && demoConfig ?
+            ((demoState.currentSegmentIndex + demoState.positionInSegment) / demoConfig.route.length) * 100 : 0}
+          currentAddress={currentAddress}
+          isResolvingAddress={isResolvingAddress}
+          onDemoPause={pauseDemoMode}
+          onDemoResume={resumeDemoMode}
+          onDemoStop={handleStopDemo}
+          onDemoSpeedChange={setDemoSpeedMultiplier}
         />
       </section>
 
-      {/* Demo Controls - Show when demo is active */}
-      {isDemoMode && (
-        <section>
-          <DemoControls
-            isActive={isDemoMode}
-            demoState={demoState}
-            currentAddress={demoConfig?.startAddress}
-            destinationAddress={demoConfig?.endAddress}
-            onPause={pauseDemoMode}
-            onResume={resumeDemoMode}
-            onStop={handleStopDemo}
-            onSpeedChange={setDemoSpeedMultiplier}
-          />
-        </section>
-      )}
+      {/* Demo Controls integrated into main dashboard - no separate section needed */}
 
-      {/* Map and Trip Controls Grid */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Live Map */}
-        <div className="lg:col-span-2">
-          <h2 className="text-lg font-medium mb-3 text-muted-foreground">Live Map</h2>
-          <LiveMap
-            center={
-              currentLocation
-                ? [currentLocation.latitude, currentLocation.longitude]
-                : [32.8998, -97.0403]
-            }
-            zoom={15}
-            locations={currentLocation ? [currentLocation] : []}
-            showRoute={true}
-            interactive={true}
-            isTracking={isTracking}
-            routePoints={routePoints}
-            // Demo trip props
-            demoConfig={demoConfig}
-            isDemoMode={isDemoMode}
-          />
-        </div>
-
-        {/* Trip Controls */}
-        <div>
-          <h2 className="text-lg font-medium mb-3 text-muted-foreground">Trip Control</h2>
-          <TripControls
-            isTracking={isTracking}
-            tripStatus={tripStatus}
-            tripName={currentTrip?.name || ''}
-            startTime={currentTrip?.startTime || null}
-            currentTime={Date.now()}
-            totalDistance={totalDistance}
-            onStartTrip={handleStartTrip}
-            onPauseTrip={handlePauseTrip}
-            onResumeTrip={handleResumeTrip}
-            onStopTrip={handleStopTrip}
-            onTripNameChange={updateTripName}
-          />
-        </div>
+      {/* Live Map */}
+      <div>
+        <h2 className="text-lg font-medium mb-3 text-muted-foreground">Live Map</h2>
+        <LiveMap
+          center={
+            currentLocation
+              ? [currentLocation.latitude, currentLocation.longitude]
+              : [32.7767, -96.7970]
+          }
+          zoom={currentLocation ? 15 : 9}
+          locations={locationHistory}
+          showRoute={true}
+          interactive={true}
+          isTracking={isTracking}
+          routePoints={routePoints}
+          // Demo trip props
+          demoConfig={demoConfig || undefined}
+          isDemoMode={isDemoMode}
+          // Map control props
+          followVehicle={followVehicle}
+          onToggleFollowVehicle={handleToggleFollowVehicle}
+          onRecenterMap={handleRecenterMap}
+          className="h-[600px]"
+        />
       </div>
 
-      {/* Current Location Info */}
-      {currentLocation && (
-        <section>
-          <h2 className="text-lg font-medium mb-3 text-muted-foreground">Location Details</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="p-4 bg-muted/30 rounded-lg">
-              <h3 className="font-medium mb-2">Coordinates</h3>
-              <p className="font-mono text-sm">
-                {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Accuracy: ±{Math.round(currentLocation.accuracy)}m
-              </p>
-            </div>
 
-            <div className="p-4 bg-muted/30 rounded-lg">
-              <h3 className="font-medium mb-2">Timestamp</h3>
-              <p className="text-sm">
-                {new Date(currentLocation.timestamp).toLocaleString()}
-              </p>
-              {currentLocation.altitude && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Altitude: {currentLocation.altitude.toFixed(1)}m
-                </p>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Quick Actions */}
-      <section className="flex justify-center gap-4">
-        <Button
-          variant="outline"
-          onClick={() => setSpeedUnit(speedUnit === 'mph' ? 'kmh' : 'mph')}
-        >
-          Switch to {speedUnit === 'mph' ? 'km/h' : 'mph'}
-        </Button>
-
-        {!isDemoMode && !currentTrip && (
-          <Button
-            variant="default"
-            onClick={() => setShowDemoForm(true)}
-          >
-            Start Demo Trip
-          </Button>
-        )}
-      </section>
 
       {/* Demo Trip Form */}
       <DemoTripForm

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { MapPin, Navigation, Shield, Zap, ChevronDown, ChevronUp, Route, BarChart3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { VideoHero } from './VideoHero'
 import { FAQItem } from '@/types'
 
 const HomePage: React.FC = () => {
@@ -51,40 +51,11 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary/10 via-background to-secondary/10">
-        <div className="container mx-auto px-4 py-20">
-          <div className="text-center max-w-4xl mx-auto">
-            <Badge variant="secondary" className="mb-4">
-              <Navigation className="w-4 h-4 mr-2" />
-              Real-time GPS Trip Tracking
-            </Badge>
-            <h1 className="text-4xl md:text-6xl font-bold text-foreground mb-6">
-              Track Your Trips in{' '}
-              <span className="text-primary">Real Time</span>
-            </h1>
-            <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Record your journeys with precise GPS tracking, speed monitoring, and route replay.
-              Manage your trip history with complete privacy protection.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button onClick={handleStartTracking} size="lg" className="text-lg px-8">
-                <MapPin className="w-5 h-5 mr-2" />
-                Start New Trip
-              </Button>
-              <Button
-                onClick={handleViewTrips}
-                variant="outline"
-                size="lg"
-                className="text-lg px-8"
-              >
-                <Route className="w-5 h-5 mr-2" />
-                View Trip History
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Video Hero Section */}
+      <VideoHero
+        onStartTracking={handleStartTracking}
+        onViewTrips={handleViewTrips}
+      />
 
       {/* Features Section */}
       <section className="py-20 bg-background">

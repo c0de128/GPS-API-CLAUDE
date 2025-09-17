@@ -10,7 +10,8 @@ import {
   X,
   TestTube,
   Server,
-  Bug
+  Bug,
+  Activity
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -48,6 +49,7 @@ export function NavigationHeader({ className }: NavigationHeaderProps) {
   const secondaryNavItems: NavigationItem[] = [
     { path: '/api-settings', label: 'API Settings', icon: Server },
     { path: '/api-test', label: 'API Test', icon: TestTube },
+    { path: '/api-testing', label: 'API Testing Dashboard', icon: Activity },
     { path: '/diagnostics', label: 'Diagnostics', icon: Bug }
   ]
 

@@ -87,7 +87,7 @@ export function ApiSettingsPage() {
             <CardHeader className="pb-3">
               <CardDescription>Base URL</CardDescription>
               <CardTitle className="text-lg font-mono">
-                localhost:3001
+                localhost:3003
               </CardTitle>
             </CardHeader>
           </Card>
@@ -96,7 +96,7 @@ export function ApiSettingsPage() {
             <CardHeader className="pb-3">
               <CardDescription>WebSocket</CardDescription>
               <CardTitle className="text-lg font-mono">
-                ws://localhost:3001/ws
+                ws://localhost:3003/ws
               </CardTitle>
             </CardHeader>
           </Card>

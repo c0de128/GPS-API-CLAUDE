@@ -33,7 +33,9 @@ const TripsPage: React.FC = () => {
       const query = searchQuery.toLowerCase()
       const filtered = trips.filter(trip =>
         trip.name.toLowerCase().includes(query) ||
-        trip.notes.toLowerCase().includes(query)
+        trip.notes.toLowerCase().includes(query) ||
+        trip.startAddress?.toLowerCase().includes(query) ||
+        trip.endAddress?.toLowerCase().includes(query)
       )
       setFilteredTrips(filtered)
     } else {
@@ -200,7 +202,7 @@ const TripsPage: React.FC = () => {
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input
-            placeholder="Search trips by name or notes..."
+            placeholder="Search trips by name, notes, or addresses..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"

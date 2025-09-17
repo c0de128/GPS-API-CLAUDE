@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "PORT=3003 node dist/server.js",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

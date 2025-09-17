@@ -164,11 +164,57 @@ const TripCard: React.FC<TripCardProps> = ({
         </CardFooter>
       )}
 
-      {/* Location Info */}
+      {/* Address Info */}
+      {(trip.startAddress || trip.endAddress) && (
+        <CardFooter className="flex-col items-start gap-2 text-sm pt-0">
+          <div className="w-full space-y-1">
+            {trip.startAddress && (
+              <div className="flex items-start gap-2">
+                <MapPin className="w-3 h-3 text-green-600 mt-1 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground">From</p>
+                  <p className="text-xs truncate" title={trip.startAddress}>
+                    {trip.startAddress}
+                  </p>
+                </div>
+              </div>
+            )}
+            {trip.endAddress && (
+              <div className="flex items-start gap-2">
+                <MapPin className="w-3 h-3 text-red-600 mt-1 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground">To</p>
+                  <p className="text-xs truncate" title={trip.endAddress}>
+                    {trip.endAddress}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardFooter>
+      )}
+
+      {/* Location Metadata */}
+      {trip.locationMetadata && (
+        <CardFooter className="flex-col items-start gap-1 text-xs text-muted-foreground pt-0">
+          <div className="grid grid-cols-2 gap-2 w-full">
+            <div>
+              <span className="font-medium">Accuracy:</span> ±{trip.locationMetadata.averageAccuracy?.toFixed(0)}m avg
+            </div>
+            {trip.locationMetadata.altitudeData && (
+              <div>
+                <span className="font-medium">Elevation:</span> {trip.locationMetadata.altitudeData.average.toFixed(0)}m avg
+              </div>
+            )}
+          </div>
+        </CardFooter>
+      )}
+
+      {/* System Info */}
       <CardFooter className="flex-col items-start gap-1 text-xs text-muted-foreground pt-0">
         <div className="flex items-center justify-between w-full">
           <div>
-            {trip.startLocation && (
+            {trip.startLocation && !trip.startAddress && (
               <span>
                 Start: {trip.startLocation.latitude.toFixed(4)}, {trip.startLocation.longitude.toFixed(4)}
               </span>

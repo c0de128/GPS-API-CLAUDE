@@ -10,6 +10,27 @@ const router = Router()
 const gpsData = new Map<string, GpsLocationUpdate[]>()
 const gpsStatus = new Map<string, GpsStatus>()
 
+// Helper function to generate simulated GPS coordinates for testing
+function generateSimulatedLocation(): GpsLocationUpdate {
+  // Start from a base location (NYC area) and add some random variation
+  const baseLatitude = 40.7128
+  const baseLongitude = -74.0060
+
+  // Add random movement within ~1km radius
+  const latVariation = (Math.random() - 0.5) * 0.01 // ~1.1km variation
+  const lngVariation = (Math.random() - 0.5) * 0.01 // ~1.1km variation
+
+  return {
+    latitude: baseLatitude + latVariation,
+    longitude: baseLongitude + lngVariation,
+    accuracy: Math.floor(Math.random() * 10) + 5, // 5-15 meters
+    speed: Math.floor(Math.random() * 30), // 0-30 km/h
+    heading: Math.floor(Math.random() * 360), // 0-360 degrees
+    altitude: Math.floor(Math.random() * 100) + 10, // 10-110 meters
+    timestamp: Date.now()
+  }
+}
+
 // Get current GPS location
 router.get('/location',
   optionalAuth,
@@ -17,15 +38,32 @@ router.get('/location',
   requirePermission('gps:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
-    const currentLocation = gpsData.get(apiKey)?.slice(-1)[0]
+    const simulate = req.query.simulate === 'true' || req.query.sim === 'true'
+    let currentLocation = gpsData.get(apiKey)?.slice(-1)[0]
 
-    if (!currentLocation) {
-      const response: ApiResponse = {
-        success: false,
-        error: 'No GPS location data available',
-        timestamp: new Date().toISOString()
+    // Generate fresh simulated data if requested, or if no real data exists
+    if (simulate || !currentLocation) {
+      currentLocation = generateSimulatedLocation()
+
+      // Store the simulated location so it appears in history
+      if (!gpsData.has(apiKey)) {
+        gpsData.set(apiKey, [])
       }
-      return res.status(404).json(response)
+      gpsData.get(apiKey)!.push(currentLocation)
+
+      // Keep only last 1000 locations per API key
+      const locations = gpsData.get(apiKey)!
+      if (locations.length > 1000) {
+        locations.splice(0, locations.length - 1000)
+      }
+
+      // Update GPS status to show tracking is active
+      gpsStatus.set(apiKey, {
+        isTracking: true,
+        permission: 'granted',
+        lastUpdate: currentLocation.timestamp,
+        accuracy: currentLocation.accuracy
+      })
     }
 
     const response: ApiResponse<GpsLocationUpdate> = {

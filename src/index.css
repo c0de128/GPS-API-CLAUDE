@@ -71,6 +71,82 @@
   z-index: auto !important;
 }
 
+/* Custom marker styles */
+.custom-marker {
+  /* Remove default Leaflet marker styles */
+  background: transparent !important;
+  border: none !important;
+  /* Ensure markers appear above map tiles */
+  z-index: 1000 !important;
+}
+
+.custom-marker .vehicle-marker {
+  width: 20px;
+  height: 20px;
+  border: 3px solid white;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  transform: translate(-50%, -50%);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.custom-marker .vehicle-marker.tracking {
+  animation: pulse 2s infinite;
+}
+
+.custom-marker .vehicle-marker.demo {
+  background-color: #9333ea;
+}
+
+.custom-marker .vehicle-marker.live {
+  background-color: #ef4444;
+}
+
+.custom-marker .vehicle-marker.static {
+  background-color: #3b82f6;
+}
+
+.custom-marker .start-end-marker {
+  width: 30px;
+  height: 30px;
+  border: 3px solid white;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  transform: translate(-50%, -50%);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+/* Pulse animation for active tracking */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+/* Ensure custom markers have proper layering */
+.leaflet-marker-icon.custom-marker {
+  z-index: 1000 !important;
+}
+
+/* Fix for marker positioning */
+.leaflet-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

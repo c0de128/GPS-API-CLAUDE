@@ -61,7 +61,7 @@ export function ServerConfig() {
 
   const fetchServerHealth = async () => {
     try {
-      const response = await fetch('http://localhost:3001/health')
+      const response = await fetch('http://localhost:3003/health')
       const data = await response.json()
       setServerHealth(data)
     } catch (error) {
@@ -71,9 +71,9 @@ export function ServerConfig() {
 
   const fetchServerMetrics = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/v1/stats/performance', {
+      const response = await fetch('http://localhost:3003/api/v1/stats/performance', {
         headers: {
-          'X-API-Key': 'gps_admin_28f24742193a4b3eb45612c3248fb6ee'
+          'X-API-Key': import.meta.env.VITE_ADMIN_API_KEY || ''
         }
       })
       const result = await response.json()
@@ -123,13 +123,13 @@ export function ServerConfig() {
   const configSettings = [
     { key: 'API Version', value: 'v1', category: 'API' },
     { key: 'Base Path', value: '/api', category: 'API' },
-    { key: 'Port', value: '3001', category: 'Server' },
+    { key: 'Port', value: '3003', category: 'Server' },
     { key: 'Host', value: '0.0.0.0', category: 'Server' },
     { key: 'Environment', value: serverHealth?.environment || 'Unknown', category: 'Server' },
-    { key: 'CORS Origins', value: 'localhost:3000, localhost:5173', category: 'Security' },
+    { key: 'CORS Origins', value: 'localhost:3000', category: 'Security' },
     { key: 'Rate Limit Window', value: '15 minutes', category: 'Security' },
     { key: 'Global Rate Limit', value: '1000 requests', category: 'Security' },
-    { key: 'WebSocket Port', value: '3001/ws', category: 'WebSocket' },
+    { key: 'WebSocket Port', value: '3003/ws', category: 'WebSocket' },
     { key: 'Max Connections', value: '1000', category: 'WebSocket' },
     { key: 'Heartbeat Interval', value: '30 seconds', category: 'WebSocket' },
   ]

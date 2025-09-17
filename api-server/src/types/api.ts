@@ -169,7 +169,7 @@ export interface AuthResponse {
 export interface ServerConfig {
   port: number
   host: string
-  cors: {
+  cors?: {
     origins: string[]
     credentials: boolean
   }

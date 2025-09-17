@@ -112,11 +112,23 @@ const DemoTripForm: React.FC<DemoTripFormProps> = ({
 
     try {
       // Geocode addresses
-      console.log('Geocoding addresses:', { startAddress, endAddress })
+      console.log('🔍 DemoTripForm: Geocoding addresses:', { startAddress, endAddress })
       const startResults = await openRouteService.geocodeAddress(startAddress)
       const endResults = await openRouteService.geocodeAddress(endAddress)
 
-      console.log('Geocoding results:', { startResults, endResults })
+      console.log('🔍 DemoTripForm: Geocoding results:', {
+        startResults: startResults.length,
+        endResults: endResults.length,
+        startFirst: startResults[0],
+        endFirst: endResults[0]
+      })
+
+      console.log('📍 DemoTripForm: COORDINATE FLOW - Extracted coordinates:', {
+        startCoords: startResults[0]?.coordinates,
+        endCoords: endResults[0]?.coordinates,
+        startAddress: startResults[0]?.address,
+        endAddress: endResults[0]?.address
+      })
 
       if (startResults.length === 0 || endResults.length === 0) {
         throw new Error(`Could not find addresses - Start: ${startResults.length} results, End: ${endResults.length} results`)
@@ -125,8 +137,15 @@ const DemoTripForm: React.FC<DemoTripFormProps> = ({
       const startCoords = startResults[0].coordinates
       const endCoords = endResults[0].coordinates
 
+      console.log('🗺️ DemoTripForm: Getting route between coordinates:', { startCoords, endCoords })
+
       // Get route
       const route = await openRouteService.getRoute(startCoords, endCoords)
+
+      console.log('🗺️ DemoTripForm: Route calculation result:', {
+        routeSegments: route.length,
+        firstSegment: route[0]
+      })
 
       if (route.length === 0) {
         throw new Error('No route found between these locations')
@@ -135,6 +154,12 @@ const DemoTripForm: React.FC<DemoTripFormProps> = ({
       // Calculate totals
       const totalDistance = route.reduce((sum, segment) => sum + segment.distance, 0)
       const estimatedDuration = route.reduce((sum, segment) => sum + segment.duration, 0)
+
+      console.log('✅ DemoTripForm: Route calculation successful:', {
+        totalDistance: `${totalDistance.toFixed(0)}m`,
+        estimatedDuration: `${estimatedDuration.toFixed(0)}s`,
+        speedMultiplier
+      })
 
       const config: DemoTripConfig = {
         startAddress: startResults[0].address,
@@ -147,18 +172,42 @@ const DemoTripForm: React.FC<DemoTripFormProps> = ({
         speedMultiplier
       }
 
+      console.log('📍 DemoTripForm: COORDINATE FLOW - Final DemoTripConfig created:', {
+        startAddress: config.startAddress,
+        endAddress: config.endAddress,
+        startCoordinates: config.startCoordinates,
+        endCoordinates: config.endCoordinates,
+        routeSegments: config.route.length,
+        firstRouteSegmentCoords: config.route[0]?.coordinates?.slice(0, 2), // Show first 2 coords
+        speedMultiplier: config.speedMultiplier
+      })
+
       setRoutePreview(config)
+      console.log('✅ DemoTripForm: Route preview set successfully')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to calculate route')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to calculate route'
+      console.error('❌ DemoTripForm: Route calculation failed:', err)
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }
   }
 
   const handleStartDemo = () => {
+    console.log('🚀 DemoTripForm: handleStartDemo called', { routePreview: !!routePreview })
     if (routePreview) {
+      console.log('🚀 DemoTripForm: Starting demo with config:', routePreview)
+      console.log('📍 DemoTripForm: COORDINATE FLOW - Config being passed to onStartDemo:', {
+        startCoordinates: routePreview.startCoordinates,
+        endCoordinates: routePreview.endCoordinates,
+        routeFirstSegment: routePreview.route[0]?.coordinates?.slice(0, 2),
+        startAddress: routePreview.startAddress,
+        endAddress: routePreview.endAddress
+      })
       onStartDemo(routePreview)
       onClose()
+    } else {
+      console.error('❌ DemoTripForm: No route preview available for demo start')
     }
   }
 

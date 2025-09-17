@@ -7,7 +7,7 @@ import type { ApiResponse, RealTimeStats, TripStatsSummary } from '@/types/api.j
 const router = Router()
 
 // Mock data for demo purposes (use real database queries in production)
-let serverStartTime = Date.now()
+const serverStartTime = Date.now()
 
 // Get real-time system statistics
 router.get('/realtime',

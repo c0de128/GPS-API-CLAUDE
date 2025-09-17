@@ -196,8 +196,8 @@ export function getApiClient(): ApiClient | null {
 
 // Default configuration for development
 export const DEFAULT_API_CONFIG: ApiConfig = {
-  baseUrl: 'http://localhost:3001',
-  websocketUrl: 'ws://localhost:3001/ws',
-  apiKey: 'gps_dev_1452bec4359a449aa8b35c97adcbb900', // Fixed development API key
+  baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3003',
+  websocketUrl: `${import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:3003'}/ws`,
+  apiKey: import.meta.env.VITE_GPS_DEV_API_KEY || import.meta.env.VITE_GPS_ADMIN_API_KEY || '',
   timeout: 10000
 }

@@ -6,12 +6,37 @@ export class DemoTripSimulator {
   private onLocationUpdate: (location: LocationData) => void
   private animationFrame?: number
   private lastPosition?: LocationData
+  private actualStartCoordinates?: [number, number]
+  private actualEndCoordinates?: [number, number]
+  private lastLocationSentTime: number = 0
+  private locationUpdateInterval: number = 2000 // Send location updates every 2 seconds
 
   constructor(
     route: RouteSegment[],
     onLocationUpdate: (location: LocationData) => void,
-    speedMultiplier: number = 1
+    speedMultiplier: number = 1,
+    startCoordinates?: [number, number],
+    endCoordinates?: [number, number]
   ) {
+    console.log('🚗 DemoTripSimulator: Constructor called', {
+      routeSegments: route.length,
+      speedMultiplier,
+      startCoordinates,
+      endCoordinates
+    })
+
+    // Store actual coordinates to preserve them during validation
+    this.actualStartCoordinates = startCoordinates
+    this.actualEndCoordinates = endCoordinates
+
+    console.log('📍 DemoTripSimulator: COORDINATE FLOW - Received coordinates:', {
+      actualStartCoordinates: this.actualStartCoordinates,
+      actualEndCoordinates: this.actualEndCoordinates
+    })
+
+    // Validate route data
+    this.validateRoute(route)
+
     this.route = route
     this.onLocationUpdate = onLocationUpdate
     this.state = {
@@ -19,11 +44,168 @@ export class DemoTripSimulator {
       currentSegmentIndex: 0,
       positionInSegment: 0,
       currentSpeed: 0,
-      targetSpeed: this.getSpeedForRoadType(route[0]?.roadType || 'residential'),
+      targetSpeed: this.getSpeedForRoadType(route[0]?.roadType || 'residential', route[0]),
       lastUpdateTime: Date.now(),
       speedMultiplier,
       isPaused: false
     }
+
+    console.log('🚗 DemoTripSimulator: Constructor completed', {
+      initialTargetSpeed: this.state.targetSpeed,
+      firstSegmentCoords: route[0]?.coordinates?.length || 0
+    })
+  }
+
+  /**
+   * Validate route segments have proper coordinate data
+   */
+  private validateRoute(route: RouteSegment[]): void {
+    console.log('🔍 DemoTripSimulator: Validating route with', route.length, 'segments')
+
+    if (!route || route.length === 0) {
+      throw new Error('DemoTripSimulator: Route is empty or undefined')
+    }
+
+    const invalidSegments: number[] = []
+    const allSegmentDetails: any[] = []
+    let fixedSegments = 0
+
+    route.forEach((segment, index) => {
+      const details = {
+        index,
+        hasCoordinates: !!segment.coordinates,
+        coordinateCount: segment.coordinates?.length || 0,
+        coordinateType: typeof segment.coordinates,
+        isArray: Array.isArray(segment.coordinates),
+        roadType: segment.roadType,
+        distance: segment.distance,
+        sampleCoordinate: segment.coordinates?.[0]
+      }
+
+      allSegmentDetails.push(details)
+
+      // Try to fix invalid segments by creating minimal coordinate data
+      if (!segment.coordinates || segment.coordinates.length < 2) {
+        console.warn(`🔧 DemoTripSimulator: Fixing invalid segment ${index} with minimal coordinates`)
+
+        // Try to preserve route continuity by connecting to adjacent segments
+        let startCoord: [number, number]
+        let endCoord: [number, number]
+
+        if (index === 0) {
+          // First segment - PRESERVE ACTUAL START COORDINATES
+          if (this.actualStartCoordinates) {
+            startCoord = this.actualStartCoordinates
+            endCoord = [this.actualStartCoordinates[0] + 0.001, this.actualStartCoordinates[1] + 0.001]
+            console.log('📍 DemoTripSimulator: COORDINATE FLOW - Using ACTUAL start coordinates for first segment:', {
+              actualStartCoordinates: this.actualStartCoordinates,
+              fixedStartCoord: startCoord,
+              fixedEndCoord: endCoord
+            })
+          } else {
+            // Fallback to Dallas only if no actual coordinates
+            startCoord = [-96.7970, 32.7767]  // Dallas
+            endCoord = [-96.7960, 32.7777]    // Slightly northeast
+            console.warn('📍 DemoTripSimulator: COORDINATE FLOW - No actual start coordinates, using Dallas fallback')
+          }
+        } else if (index === route.length - 1) {
+          // Last segment - try to use actual end coordinates if available
+          if (this.actualEndCoordinates) {
+            const prevSegment = route[index - 1]
+            if (prevSegment?.coordinates?.length > 0) {
+              const lastCoord = prevSegment.coordinates[prevSegment.coordinates.length - 1]
+              startCoord = lastCoord
+              endCoord = this.actualEndCoordinates
+              console.log('📍 DemoTripSimulator: COORDINATE FLOW - Using ACTUAL end coordinates for last segment:', {
+                actualEndCoordinates: this.actualEndCoordinates,
+                connectedFromPrevious: startCoord,
+                fixedEndCoord: endCoord
+              })
+            } else {
+              startCoord = [this.actualEndCoordinates[0] - 0.001, this.actualEndCoordinates[1] - 0.001]
+              endCoord = this.actualEndCoordinates
+            }
+          } else {
+            // Connect from previous segment or use fallback
+            const prevSegment = route[index - 1]
+            if (prevSegment?.coordinates?.length > 0) {
+              const lastCoord = prevSegment.coordinates[prevSegment.coordinates.length - 1]
+              startCoord = lastCoord
+              endCoord = [lastCoord[0] + 0.001, lastCoord[1] + 0.001]
+            } else {
+              startCoord = [-96.7960, 32.7777]
+              endCoord = [-96.7950, 32.7787]
+            }
+          }
+        } else {
+          // Middle segment - try to connect from previous segment
+          const prevSegment = route[index - 1]
+          if (prevSegment?.coordinates?.length > 0) {
+            const lastCoord = prevSegment.coordinates[prevSegment.coordinates.length - 1]
+            startCoord = lastCoord
+            endCoord = [lastCoord[0] + 0.001, lastCoord[1] + 0.001]
+          } else {
+            // Fallback to interpolated coordinates between actual start/end if available
+            if (this.actualStartCoordinates && this.actualEndCoordinates) {
+              const progress = index / route.length
+              const lngDiff = this.actualEndCoordinates[0] - this.actualStartCoordinates[0]
+              const latDiff = this.actualEndCoordinates[1] - this.actualStartCoordinates[1]
+
+              startCoord = [
+                this.actualStartCoordinates[0] + (lngDiff * progress),
+                this.actualStartCoordinates[1] + (latDiff * progress)
+              ]
+              endCoord = [
+                this.actualStartCoordinates[0] + (lngDiff * (progress + 0.1)),
+                this.actualStartCoordinates[1] + (latDiff * (progress + 0.1))
+              ]
+              console.log('📍 DemoTripSimulator: COORDINATE FLOW - Interpolated coordinates for middle segment:', {
+                progress,
+                startCoord,
+                endCoord
+              })
+            } else {
+              // Last resort: Dallas area progression
+              const progress = index / route.length
+              const baseLng = -96.7970
+              const baseLat = 32.7767
+              const offset = progress * 0.01
+
+              startCoord = [baseLng + offset, baseLat + offset]
+              endCoord = [baseLng + offset + 0.001, baseLat + offset + 0.001]
+            }
+          }
+        }
+
+        segment.coordinates = [startCoord, endCoord]
+        fixedSegments++
+      }
+
+      // Double-check after potential fix
+      if (!segment.coordinates || segment.coordinates.length < 2) {
+        invalidSegments.push(index)
+      }
+    })
+
+    console.log('🔍 DemoTripSimulator: Validation summary:', {
+      totalSegments: route.length,
+      fixedSegments,
+      invalidSegments: invalidSegments.length,
+      sampleDetails: allSegmentDetails.slice(0, 2)
+    })
+
+    if (invalidSegments.length > 0) {
+      console.error('❌ DemoTripSimulator: Still invalid after fixes:', {
+        invalidSegments,
+        segmentDetails: invalidSegments.slice(0, 3).map(i => allSegmentDetails[i])
+      })
+      throw new Error(`DemoTripSimulator: Route segments ${invalidSegments.join(', ')} have insufficient coordinate data after fix attempts`)
+    }
+
+    console.log('✅ DemoTripSimulator: Route validation passed', {
+      totalSegments: route.length,
+      totalCoordinates: route.reduce((sum, seg) => sum + (seg.coordinates?.length || 0), 0)
+    })
   }
 
   /**
@@ -37,6 +219,15 @@ export class DemoTripSimulator {
     this.state.isActive = true
     this.state.isPaused = false
     this.state.lastUpdateTime = Date.now()
+
+    // Log the initial starting position
+    const initialLocation = this.getCurrentLocation()
+    console.log('🏁 DemoTripSimulator.start: Initial vehicle position:', {
+      location: initialLocation,
+      firstSegment: this.route[0],
+      firstCoordinate: this.route[0]?.coordinates?.[0]
+    })
+
     this.animate()
   }
 
@@ -115,12 +306,17 @@ export class DemoTripSimulator {
     // Update position
     this.updatePosition(deltaTime)
 
-    // Generate new location data
-    const location = this.getCurrentLocation()
-    console.log('animate() - generated location:', location)
-    if (location) {
-      this.onLocationUpdate(location)
-      this.lastPosition = location
+    // Only send location updates every 2 seconds
+    const now_ms = Date.now()
+    if (now_ms - this.lastLocationSentTime >= this.locationUpdateInterval) {
+      // Generate new location data
+      const location = this.getCurrentLocation()
+      console.log('animate() - generated location:', location)
+      if (location) {
+        this.onLocationUpdate(location)
+        this.lastPosition = location
+        this.lastLocationSentTime = now_ms
+      }
     }
 
     // Check if simulation is complete
@@ -160,7 +356,7 @@ export class DemoTripSimulator {
       // Update target speed for new segment
       const nextSegment = this.route[this.state.currentSegmentIndex]
       if (nextSegment) {
-        this.state.targetSpeed = this.getSpeedForRoadType(nextSegment.roadType)
+        this.state.targetSpeed = this.getSpeedForRoadType(nextSegment.roadType, nextSegment)
       }
     }
   }
@@ -172,15 +368,11 @@ export class DemoTripSimulator {
     const speedDifference = this.state.targetSpeed - this.state.currentSpeed
     const maxAcceleration = this.getMaxAcceleration(roadType) // mph per second
 
-    // Add some randomness for realistic variation
-    const randomFactor = 0.9 + Math.random() * 0.2 // ±10% variation
-    const targetWithVariation = this.state.targetSpeed * randomFactor
-
     if (Math.abs(speedDifference) < 1) {
-      // Close to target, small adjustments
-      this.state.currentSpeed = targetWithVariation
+      // Close to target, set to exact target speed
+      this.state.currentSpeed = this.state.targetSpeed
     } else {
-      // Gradual acceleration/deceleration
+      // Gradual acceleration/deceleration toward target
       const acceleration = Math.sign(speedDifference) * Math.min(
         Math.abs(speedDifference),
         maxAcceleration * deltaTime
@@ -188,8 +380,9 @@ export class DemoTripSimulator {
       this.state.currentSpeed += acceleration
     }
 
-    // Ensure speed doesn't go negative
-    this.state.currentSpeed = Math.max(0, this.state.currentSpeed)
+    // Ensure speed doesn't go negative and enforce maximum speed limits
+    const maxSpeed = this.getMaxSpeedForRoadType(roadType)
+    this.state.currentSpeed = Math.max(0, Math.min(this.state.currentSpeed, maxSpeed))
   }
 
   /**
@@ -199,8 +392,31 @@ export class DemoTripSimulator {
     const currentSegment = this.route[this.state.currentSegmentIndex]
     console.log('getCurrentLocation() - currentSegmentIndex:', this.state.currentSegmentIndex, 'segment:', currentSegment)
 
-    if (!currentSegment || currentSegment.coordinates.length < 2) {
-      console.log('getCurrentLocation() - no valid segment or coordinates')
+    console.log('📍 DemoTripSimulator: COORDINATE FLOW - getCurrentLocation called with state:', {
+      currentSegmentIndex: this.state.currentSegmentIndex,
+      positionInSegment: this.state.positionInSegment,
+      actualStartCoordinates: this.actualStartCoordinates,
+      actualEndCoordinates: this.actualEndCoordinates,
+      totalSegments: this.route.length
+    })
+
+    if (!currentSegment) {
+      console.error('❌ DemoSimulator.getCurrentLocation: No current segment found', {
+        currentIndex: this.state.currentSegmentIndex,
+        totalSegments: this.route.length,
+        routeEmpty: this.route.length === 0
+      })
+      return null
+    }
+
+    if (!currentSegment.coordinates || currentSegment.coordinates.length < 2) {
+      console.error('❌ DemoSimulator.getCurrentLocation: Segment has insufficient coordinates', {
+        segmentIndex: this.state.currentSegmentIndex,
+        coordinateCount: currentSegment.coordinates?.length || 0,
+        coordinates: currentSegment.coordinates,
+        roadType: currentSegment.roadType,
+        distance: currentSegment.distance
+      })
       return null
     }
 
@@ -217,11 +433,38 @@ export class DemoTripSimulator {
     const start = coordinates[segmentIndex]
     const end = coordinates[nextIndex]
 
-    // Interpolate coordinates
-    const longitude = start[0] + (end[0] - start[0]) * localProgress
-    const latitude = start[1] + (end[1] - start[1]) * localProgress
+    // Special handling for first position - ensure we start EXACTLY at actual coordinates
+    let longitude: number
+    let latitude: number
 
-    console.log('getCurrentLocation() - interpolated lat/lng:', latitude, longitude)
+    if (this.state.currentSegmentIndex === 0 && this.state.positionInSegment === 0 && this.actualStartCoordinates) {
+      // First position should be exactly the geocoded start coordinates
+      longitude = this.actualStartCoordinates[0]
+      latitude = this.actualStartCoordinates[1]
+      console.log('📍 DemoTripSimulator: COORDINATE FLOW - Using EXACT start coordinates for first position:', {
+        actualStartCoordinates: this.actualStartCoordinates,
+        exactLat: latitude,
+        exactLng: longitude
+      })
+    } else {
+      // Regular interpolation for all other positions
+      longitude = start[0] + (end[0] - start[0]) * localProgress
+      latitude = start[1] + (end[1] - start[1]) * localProgress
+    }
+
+    console.log('getCurrentLocation() - final lat/lng:', latitude, longitude)
+
+    console.log('📍 DemoTripSimulator: COORDINATE FLOW - Final position result:', {
+      segmentIndex: this.state.currentSegmentIndex,
+      positionInSegment: this.state.positionInSegment,
+      localProgress,
+      startCoord: start,
+      endCoord: end,
+      finalLat: latitude,
+      finalLng: longitude,
+      usedExactStart: this.state.currentSegmentIndex === 0 && this.state.positionInSegment === 0 && this.actualStartCoordinates,
+      actualStartCoordinates: this.actualStartCoordinates
+    })
 
     // Calculate heading if we have a previous position
     let heading: number | undefined
@@ -234,7 +477,7 @@ export class DemoTripSimulator {
       )
     }
 
-    return {
+    const locationData = {
       latitude,
       longitude,
       accuracy: 5 + Math.random() * 5, // 5-10m accuracy simulation
@@ -243,6 +486,16 @@ export class DemoTripSimulator {
       heading,
       speed: this.state.currentSpeed * 0.44704 // Convert mph to m/s
     }
+
+    console.log('🚗 DEMO SIMULATOR: Generated location data:', {
+      lat: locationData.latitude.toFixed(6),
+      lng: locationData.longitude.toFixed(6),
+      speed: this.state.currentSpeed.toFixed(1),
+      segment: this.state.currentSegmentIndex,
+      position: (this.state.positionInSegment * 100).toFixed(1) + '%'
+    })
+
+    return locationData
   }
 
   /**
@@ -257,35 +510,36 @@ export class DemoTripSimulator {
     const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
               Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon)
 
-    let heading = Math.atan2(y, x) * 180 / Math.PI
+    const heading = Math.atan2(y, x) * 180 / Math.PI
     return (heading + 360) % 360 // Normalize to 0-360
   }
 
   /**
    * Get realistic speed for road type with variation
    */
-  private getSpeedForRoadType(roadType: RoadType): number {
+  private getSpeedForRoadType(roadType: RoadType, segment?: RouteSegment): number {
+    // Use speed limit from route segment if available, otherwise use base speeds
     const baseSpeeds = {
       highway: 65,
-      arterial: 40,
+      arterial: 45, // Updated to match OpenRouteService
       residential: 25,
       local: 30,
       parking: 5
     }
 
-    const baseSpeed = baseSpeeds[roadType]
+    const targetSpeed = segment?.speedLimit || baseSpeeds[roadType]
 
-    // Add realistic variation based on traffic, conditions, etc.
+    // Add small, realistic variation based on traffic, conditions, etc.
     const variationRange = {
-      highway: 10, // 55-75 mph
-      arterial: 8,  // 32-48 mph
-      residential: 5, // 20-30 mph
-      local: 5,     // 25-35 mph
-      parking: 2    // 3-7 mph
+      highway: 5,  // 60-70 mph (reduced from ±10)
+      arterial: 3, // 42-48 mph (reduced from ±8)
+      residential: 3, // 22-28 mph (reduced from ±5)
+      local: 3,    // 27-33 mph (reduced from ±5)
+      parking: 1   // 4-6 mph (reduced from ±2)
     }
 
     const variation = (Math.random() - 0.5) * variationRange[roadType]
-    return Math.max(5, baseSpeed + variation)
+    return Math.max(5, targetSpeed + variation)
   }
 
   /**
@@ -301,5 +555,19 @@ export class DemoTripSimulator {
       parking: 3 // Very slow acceleration
     }
     return accelerations[roadType]
+  }
+
+  /**
+   * Get maximum speed limit for road type to prevent unrealistic speeds
+   */
+  private getMaxSpeedForRoadType(roadType: RoadType): number {
+    const maxSpeeds = {
+      highway: 75,   // Absolute maximum for highways
+      arterial: 50,  // Absolute maximum for arterials
+      residential: 30, // Absolute maximum for residential
+      local: 35,     // Absolute maximum for local roads
+      parking: 10    // Absolute maximum for parking areas
+    }
+    return maxSpeeds[roadType]
   }
 }

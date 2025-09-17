@@ -108,11 +108,32 @@ export function useGPS(speedUnit: 'mph' | 'kmh' = 'mph'): UseGPSReturn {
       gpsService.stopTracking()
     }
 
-    // Create demo simulator
+    // Debug route before creating simulator
+    console.log('🔍 useGPS: Route data being passed to DemoTripSimulator:', {
+      routeSegments: config.route.length,
+      firstSegmentCoords: config.route[0]?.coordinates?.length,
+      lastSegmentCoords: config.route[config.route.length - 1]?.coordinates?.length,
+      sampleSegment: config.route[0]
+    })
+
+    // Create demo simulator with actual coordinates
+    console.log('📍 useGPS: COORDINATE FLOW - Passing coordinates to DemoTripSimulator:', {
+      startCoordinates: config.startCoordinates,
+      endCoordinates: config.endCoordinates,
+      startAddress: config.startAddress,
+      endAddress: config.endAddress
+    })
+
     const simulator = new DemoTripSimulator(
       config.route,
       (location: LocationData) => {
-        console.log('Demo location update:', location)
+        console.log('🚗 useGPS: Demo location update received:', {
+          lat: location.latitude,
+          lng: location.longitude,
+          speed: location.speed,
+          timestamp: location.timestamp
+        })
+
         // Update GPS state with simulated location
         setGpsState(prev => ({
           ...prev,
@@ -121,10 +142,13 @@ export function useGPS(speedUnit: 'mph' | 'kmh' = 'mph'): UseGPSReturn {
         }))
 
         // Add to GPS service for speed calculations
+        console.log('🚗 useGPS: Adding location to GPS service for speed calculations')
         gpsService.addLocationData(location)
         updateSpeedValues()
       },
-      config.speedMultiplier
+      config.speedMultiplier,
+      config.startCoordinates,  // Pass actual start coordinates
+      config.endCoordinates     // Pass actual end coordinates
     )
 
     demoSimulatorRef.current = simulator
@@ -179,7 +203,7 @@ export function useGPS(speedUnit: 'mph' | 'kmh' = 'mph'): UseGPSReturn {
       if (demoSimulatorRef.current) {
         setDemoState(demoSimulatorRef.current.getState())
       }
-    }, 100) // Update every 100ms
+    }, 2000) // Update every 2 seconds to match GPS throttling
 
     return () => clearInterval(interval)
   }, [isDemoMode])
@@ -192,6 +216,16 @@ export function useGPS(speedUnit: 'mph' | 'kmh' = 'mph'): UseGPSReturn {
       }
     }
   }, [])
+
+  console.log('🌍 useGPS HOOK: Returning state to components:', {
+    isDemoMode,
+    isTracking: isDemoMode ? true : gpsState.isTracking,
+    hasCurrentLocation: !!gpsState.currentLocation,
+    currentLocationCoords: gpsState.currentLocation ?
+      `${gpsState.currentLocation.latitude.toFixed(6)}, ${gpsState.currentLocation.longitude.toFixed(6)}` : 'none',
+    error: gpsState.error,
+    permission: gpsState.permission
+  })
 
   return {
     // State

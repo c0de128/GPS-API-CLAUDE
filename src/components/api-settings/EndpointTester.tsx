@@ -45,7 +45,7 @@ interface TestResult {
 export function EndpointTester() {
   const [selectedCategory, setSelectedCategory] = useState<string>('gps')
   const [selectedEndpoint, setSelectedEndpoint] = useState<string>('')
-  const [apiKey, setApiKey] = useState('gps_dev_1452bec4359a449aa8b35c97adcbb900')
+  const [apiKey, setApiKey] = useState('')
   const [requestBody, setRequestBody] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [testResults, setTestResults] = useState<TestResult[]>([])
@@ -172,7 +172,7 @@ export function EndpointTester() {
         requestOptions.body = requestBody
       }
 
-      const response = await fetch(`http://localhost:3001${endpoint.path}`, requestOptions)
+      const response = await fetch(`http://localhost:3003${endpoint.path}`, requestOptions)
       const responseData = await response.json()
       const responseTime = Date.now() - startTime
 
@@ -216,7 +216,7 @@ export function EndpointTester() {
     if (!endpoint) return ''
 
     let curl = `curl -X ${endpoint.method} \\\n`
-    curl += `  http://localhost:3001${endpoint.path} \\\n`
+    curl += `  http://localhost:3003${endpoint.path} \\\n`
 
     if (endpoint.requiresAuth && apiKey) {
       curl += `  -H "X-API-Key: ${apiKey}" \\\n`

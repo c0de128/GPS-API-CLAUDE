@@ -111,7 +111,7 @@ VITE_OPENROUTESERVICE_TOKEN=your_openrouteservice_api_key_here
 VITE_ADMIN_API_KEY=your_secure_admin_key_here
 
 # API Server Configuration
-VITE_API_BASE_URL=http://localhost:3001
+VITE_API_BASE_URL=http://localhost:3003
 ```
 
 ### Getting API Keys

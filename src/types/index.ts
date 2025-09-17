@@ -68,6 +68,8 @@ export interface Trip {
   endTime?: number
   startLocation?: LocationData
   endLocation?: LocationData
+  startAddress?: string // Human-readable start address
+  endAddress?: string   // Human-readable end address
   route: LocationData[]
   waypoints: Waypoint[]
   speeds: SpeedData[]
@@ -78,6 +80,22 @@ export interface Trip {
   createdAt: number
   updatedAt: number
   demoConfig?: DemoTripConfig // Only present for demo trips
+  // Enhanced geolocation metadata
+  routeSegments?: RouteSegment[] // Detailed route information for demo trips
+  locationMetadata?: {
+    averageAccuracy: number
+    minAccuracy: number
+    maxAccuracy: number
+    altitudeData?: {
+      min: number
+      max: number
+      average: number
+    }
+    headingData?: {
+      initialHeading: number
+      finalHeading: number
+    }
+  }
 }
 
 // Trip statistics
