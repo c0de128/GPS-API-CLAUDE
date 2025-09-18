@@ -165,7 +165,10 @@ NODE_ENV=development                      # development | production
 - **augments**: Framework documentation and examples
 
 ## Sub-Agents
-- **Technical Consultant** (`.claude/agents/`): Architecture and technology recommendations
+- **Technical Consultant** (`.claude/sub-agents/`): Architecture and technology recommendations
+- **Project Manager** (`.claude/agents/`): Task planning and project organization
+- **Code Reviewer** (`.claude/agents/`): Code quality and security analysis
+- **Automated Testing Engineer** (`.claude/agents/`): Comprehensive test coverage and validation
 
 ## Utilities and Monitoring
 - **Performance**: `src/utils/performance.ts` - Web Vitals and performance tracking
