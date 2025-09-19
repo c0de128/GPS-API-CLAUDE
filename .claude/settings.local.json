@@ -46,7 +46,8 @@
       "Bash(Stop-Process -Force)",
       "Bash(awk:*)",
       "Bash(xargs kill:*)",
-      "Bash(/bashes)"
+      "Bash(/bashes)",
+      "Read(//c/_dev/**)"
     ],
     "deny": [],
     "ask": []
