@@ -4,13 +4,9 @@ import { authenticate, requirePermission } from '@/middleware/auth.js'
 import { createEndpointRateLimit } from '@/middleware/rateLimit.js'
 import type { ApiResponse, TripProgressUpdate, TripSummary, TripRoute, GpsLocationUpdate } from '@/types/api.js'
 import { v4 as uuidv4 } from 'uuid'
+import { dataStore, recordApiUsage, addTrip, getTripsForApiKey } from '@/services/dataStore.js'
 
 const router = Router()
-
-// In-memory storage for demo purposes (use database in production)
-const trips = new Map<string, TripProgressUpdate>()
-const tripRoutes = new Map<string, GpsLocationUpdate[]>()
-const userTrips = new Map<string, string[]>() // apiKey -> tripIds
 
 // Helper function to calculate distance between two points
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -24,50 +20,6 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c
 }
 
-// Helper function to calculate trip statistics
-function calculateTripStats(tripId: string): Partial<TripProgressUpdate> {
-  const route = tripRoutes.get(tripId) || []
-  if (route.length < 2) {
-    return {
-      distance: 0,
-      duration: 0,
-      averageSpeed: 0,
-      maxSpeed: 0
-    }
-  }
-
-  let totalDistance = 0
-  let maxSpeed = 0
-
-  for (let i = 1; i < route.length; i++) {
-    const prev = route[i - 1]
-    const curr = route[i]
-
-    // Calculate distance between points
-    const segmentDistance = calculateDistance(
-      prev.latitude, prev.longitude,
-      curr.latitude, curr.longitude
-    )
-    totalDistance += segmentDistance
-
-    // Track max speed
-    if (curr.speed && curr.speed > maxSpeed) {
-      maxSpeed = curr.speed
-    }
-  }
-
-  const duration = route[route.length - 1].timestamp - route[0].timestamp
-  const averageSpeed = duration > 0 ? (totalDistance / (duration / 3600000)) : 0 // km/h
-
-  return {
-    distance: totalDistance,
-    duration,
-    averageSpeed,
-    maxSpeed,
-    routePointsCount: route.length
-  }
-}
-
 // Get all trips for authenticated user
 router.get('/',
   authenticate,
@@ -75,27 +27,26 @@ router.get('/',
   requirePermission('trips:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
-    const userTripIds = userTrips.get(apiKey) || []
+    recordApiUsage(apiKey)
 
-    const userTripData = userTripIds.map(tripId => {
-      const trip = trips.get(tripId)
-      if (!trip) return null
+    const userTrips = getTripsForApiKey(apiKey)
 
+    const userTripData = userTrips.map(trip => {
       const summary: TripSummary = {
-        id: trip.tripId,
+        id: trip.id,
         name: trip.name,
         status: trip.status,
         startTime: trip.startTime,
-        endTime: trip.status === 'completed' ? trip.lastUpdate : undefined,
-        distance: trip.distance,
-        duration: trip.duration,
-        averageSpeed: trip.averageSpeed,
-        maxSpeed: trip.maxSpeed,
-        routePointsCount: trip.routePointsCount
+        endTime: trip.status === 'completed' ? trip.endTime : undefined,
+        distance: trip.totalDistance || 0,
+        duration: trip.endTime ? new Date(trip.endTime).getTime() - new Date(trip.startTime).getTime() : undefined,
+        averageSpeed: trip.averageSpeed || 0,
+        maxSpeed: trip.maxSpeed || 0,
+        routePointsCount: trip.routePoints?.length || 0
       }
 
       return summary
-    }).filter(Boolean) as TripSummary[]
+    })
 
     const response: ApiResponse<TripSummary[]> = {
       success: true,
@@ -114,23 +65,15 @@ router.get('/:tripId',
   requirePermission('trips:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const tripId = req.params.tripId
-    const userTripIds = userTrips.get(apiKey) || []
+    const userTrips = getTripsForApiKey(apiKey)
 
-    if (!userTripIds.includes(tripId)) {
-      const response: ApiResponse = {
-        success: false,
-        error: 'Trip not found or access denied',
-        timestamp: new Date().toISOString()
-      }
-      return res.status(404).json(response)
-    }
-
-    const trip = trips.get(tripId)
+    const trip = userTrips.find(t => t.id === tripId)
     if (!trip) {
       const response: ApiResponse = {
         success: false,
-        error: 'Trip not found',
+        error: 'Trip not found or access denied',
         timestamp: new Date().toISOString()
       }
       return res.status(404).json(response)
@@ -153,10 +96,12 @@ router.get('/:tripId/route',
   requirePermission('trips:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const tripId = req.params.tripId
-    const userTripIds = userTrips.get(apiKey) || []
+    const userTrips = getTripsForApiKey(apiKey)
 
-    if (!userTripIds.includes(tripId)) {
+    const trip = userTrips.find(t => t.id === tripId)
+    if (!trip) {
       const response: ApiResponse = {
         success: false,
         error: 'Trip not found or access denied',
@@ -165,14 +110,14 @@ router.get('/:tripId/route',
       return res.status(404).json(response)
     }
 
-    const route = tripRoutes.get(tripId) || []
+    const route = trip.routePoints || []
     const routeData: TripRoute = {
       tripId,
       points: route.map(point => ({
         latitude: point.latitude,
         longitude: point.longitude,
         timestamp: point.timestamp,
-        speed: point.speed,
+        speed: point.speed || 0,
         accuracy: point.accuracy
       })),
       totalPoints: route.length
@@ -195,6 +140,7 @@ router.post('/',
   requirePermission('trips:write'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const { name } = req.body
 
     if (!name || typeof name !== 'string') {
@@ -207,30 +153,20 @@ router.post('/',
     }
 
     const tripId = uuidv4()
-    const now = Date.now()
+    const now = new Date().toISOString()
 
     const newTrip: TripProgressUpdate = {
-      tripId,
+      id: tripId,
       status: 'planning',
-      name,
-      distance: 0,
-      duration: 0,
+      name: name.trim(),
+      startTime: now,
+      totalDistance: 0,
       averageSpeed: 0,
       maxSpeed: 0,
-      routePointsCount: 0,
-      waypointsCount: 0,
-      startTime: now,
-      lastUpdate: now
+      routePoints: []
     }
 
-    trips.set(tripId, newTrip)
-    tripRoutes.set(tripId, [])
-
-    // Add to user's trips
-    if (!userTrips.has(apiKey)) {
-      userTrips.set(apiKey, [])
-    }
-    userTrips.get(apiKey)!.push(tripId)
+    addTrip(apiKey, newTrip)
 
     const response: ApiResponse<TripProgressUpdate> = {
       success: true,
@@ -238,21 +174,23 @@ router.post('/',
       timestamp: new Date().toISOString()
     }
 
-    res.status(201).json(response)
+    res.json(response)
   }
 )
 
-// Start/activate a trip
+// Start a trip (change status to in_progress)
 router.post('/:tripId/start',
   authenticate,
   createEndpointRateLimit(10, 60000),
   requirePermission('trips:write'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const tripId = req.params.tripId
-    const userTripIds = userTrips.get(apiKey) || []
+    const userTrips = getTripsForApiKey(apiKey)
 
-    if (!userTripIds.includes(tripId)) {
+    const trip = userTrips.find(t => t.id === tripId)
+    if (!trip) {
       const response: ApiResponse = {
         success: false,
         error: 'Trip not found or access denied',
@@ -261,23 +199,26 @@ router.post('/:tripId/start',
       return res.status(404).json(response)
     }
 
-    const trip = trips.get(tripId)
-    if (!trip) {
+    if (trip.status !== 'planning') {
       const response: ApiResponse = {
         success: false,
-        error: 'Trip not found',
+        error: 'Trip can only be started from planning status',
         timestamp: new Date().toISOString()
       }
-      return res.status(404).json(response)
+      return res.status(400).json(response)
     }
 
-    trip.status = 'active'
-    trip.startTime = Date.now()
-    trip.lastUpdate = trip.startTime
+    const updatedTrip: TripProgressUpdate = {
+      ...trip,
+      status: 'in_progress',
+      startTime: new Date().toISOString()
+    }
+
+    addTrip(apiKey, updatedTrip)
 
     const response: ApiResponse<TripProgressUpdate> = {
       success: true,
-      data: trip,
+      data: updatedTrip,
       timestamp: new Date().toISOString()
     }
 
@@ -285,18 +226,30 @@ router.post('/:tripId/start',
   }
 )
 
-// Update trip with GPS location
+// Add location to trip
 router.post('/:tripId/location',
   authenticate,
   createEndpointRateLimit(60, 60000),
   requirePermission('trips:write'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const tripId = req.params.tripId
     const locationUpdate: GpsLocationUpdate = req.body
-    const userTripIds = userTrips.get(apiKey) || []
 
-    if (!userTripIds.includes(tripId)) {
+    if (!locationUpdate.latitude || !locationUpdate.longitude) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Location latitude and longitude are required',
+        timestamp: new Date().toISOString()
+      }
+      return res.status(400).json(response)
+    }
+
+    const userTrips = getTripsForApiKey(apiKey)
+    const trip = userTrips.find(t => t.id === tripId)
+
+    if (!trip) {
       const response: ApiResponse = {
         success: false,
         error: 'Trip not found or access denied',
@@ -305,45 +258,55 @@ router.post('/:tripId/location',
       return res.status(404).json(response)
     }
 
-    const trip = trips.get(tripId)
-    if (!trip) {
+    if (trip.status !== 'in_progress') {
       const response: ApiResponse = {
         success: false,
-        error: 'Trip not found',
-        timestamp: new Date().toISOString()
-      }
-      return res.status(404).json(response)
-    }
-
-    if (trip.status !== 'active') {
-      const response: ApiResponse = {
-        success: false,
-        error: 'Trip is not active',
+        error: 'Can only add locations to trips in progress',
         timestamp: new Date().toISOString()
       }
       return res.status(400).json(response)
     }
 
     // Add location to route
-    if (!tripRoutes.has(tripId)) {
-      tripRoutes.set(tripId, [])
+    const routePoints = trip.routePoints || []
+    routePoints.push(locationUpdate)
+
+    // Calculate updated statistics
+    let totalDistance = trip.totalDistance || 0
+    let maxSpeed = trip.maxSpeed || 0
+
+    if (routePoints.length > 1) {
+      const prev = routePoints[routePoints.length - 2]
+      const curr = locationUpdate
+      const segmentDistance = calculateDistance(
+        prev.latitude, prev.longitude,
+        curr.latitude, curr.longitude
+      )
+      totalDistance += segmentDistance
     }
 
-    locationUpdate.tripId = tripId
-    locationUpdate.timestamp = locationUpdate.timestamp || Date.now()
+    if (locationUpdate.speed && locationUpdate.speed > maxSpeed) {
+      maxSpeed = locationUpdate.speed
+    }
 
-    tripRoutes.get(tripId)!.push(locationUpdate)
+    const duration = routePoints.length > 1
+      ? routePoints[routePoints.length - 1].timestamp - routePoints[0].timestamp
+      : 0
+    const averageSpeed = duration > 0 ? (totalDistance / (duration / 3600000)) : 0
 
-    // Update trip statistics
-    const stats = calculateTripStats(tripId)
-    Object.assign(trip, stats)
+    const updatedTrip: TripProgressUpdate = {
+      ...trip,
+      routePoints,
+      totalDistance,
+      maxSpeed,
+      averageSpeed
+    }
 
-    trip.currentLocation = locationUpdate
-    trip.lastUpdate = locationUpdate.timestamp
+    addTrip(apiKey, updatedTrip)
 
     const response: ApiResponse<TripProgressUpdate> = {
       success: true,
-      data: trip,
+      data: updatedTrip,
       timestamp: new Date().toISOString()
     }
 
@@ -358,10 +321,12 @@ router.post('/:tripId/complete',
   requirePermission('trips:write'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const tripId = req.params.tripId
-    const userTripIds = userTrips.get(apiKey) || []
+    const userTrips = getTripsForApiKey(apiKey)
 
-    if (!userTripIds.includes(tripId)) {
+    const trip = userTrips.find(t => t.id === tripId)
+    if (!trip) {
       const response: ApiResponse = {
         success: false,
         error: 'Trip not found or access denied',
@@ -370,26 +335,26 @@ router.post('/:tripId/complete',
       return res.status(404).json(response)
     }
 
-    const trip = trips.get(tripId)
-    if (!trip) {
+    if (trip.status !== 'in_progress') {
       const response: ApiResponse = {
         success: false,
-        error: 'Trip not found',
+        error: 'Trip must be in progress to complete',
         timestamp: new Date().toISOString()
       }
-      return res.status(404).json(response)
+      return res.status(400).json(response)
     }
 
-    trip.status = 'completed'
-    trip.lastUpdate = Date.now()
+    const updatedTrip: TripProgressUpdate = {
+      ...trip,
+      status: 'completed',
+      endTime: new Date().toISOString()
+    }
 
-    // Calculate final statistics
-    const stats = calculateTripStats(tripId)
-    Object.assign(trip, stats)
+    addTrip(apiKey, updatedTrip)
 
     const response: ApiResponse<TripProgressUpdate> = {
       success: true,
-      data: trip,
+      data: updatedTrip,
       timestamp: new Date().toISOString()
     }
 
@@ -404,10 +369,12 @@ router.delete('/:tripId',
   requirePermission('trips:write'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const tripId = req.params.tripId
-    const userTripIds = userTrips.get(apiKey) || []
+    const userTrips = getTripsForApiKey(apiKey)
 
-    if (!userTripIds.includes(tripId)) {
+    const tripIndex = userTrips.findIndex(t => t.id === tripId)
+    if (tripIndex === -1) {
       const response: ApiResponse = {
         success: false,
         error: 'Trip not found or access denied',
@@ -416,15 +383,10 @@ router.delete('/:tripId',
       return res.status(404).json(response)
     }
 
-    // Remove from storage
-    trips.delete(tripId)
-    tripRoutes.delete(tripId)
-
-    // Remove from user's trips
-    const index = userTripIds.indexOf(tripId)
-    if (index > -1) {
-      userTripIds.splice(index, 1)
-    }
+    // Remove trip from data store
+    const trips = dataStore.trips.get(apiKey) || []
+    trips.splice(tripIndex, 1)
+    dataStore.trips.set(apiKey, trips)
 
     const response: ApiResponse = {
       success: true,
@@ -436,3 +398,4 @@ router.delete('/:tripId',
 )
 
 export { router as tripsRouter }
+export default router

@@ -110,9 +110,6 @@ const TrackingDashboard: React.FC<TrackingDashboardProps> = ({
                     </div>
                   </div>
                 </div>
-                {isTracking && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
-                )}
               </div>
               <div className="mt-2 text-sm font-medium">Current Speed</div>
             </div>

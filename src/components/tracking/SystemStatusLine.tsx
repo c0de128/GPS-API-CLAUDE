@@ -49,7 +49,12 @@ const SystemStatusLine: React.FC<SystemStatusLineProps> = ({
   const getTripStatusBadge = () => {
     switch (tripStatus) {
       case 'active':
-        return <Badge className="bg-green-600 text-white">Recording</Badge>
+        return (
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+            <Badge className="bg-green-600 text-white">Recording</Badge>
+          </div>
+        )
       case 'paused':
         return <Badge variant="secondary">Paused</Badge>
       default:
@@ -64,7 +69,6 @@ const SystemStatusLine: React.FC<SystemStatusLineProps> = ({
         {getGPSStatusBadge()}
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground">Trip:</span>
         {getTripStatusBadge()}
       </div>
       <div className="flex items-center gap-2">

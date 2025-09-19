@@ -3,6 +3,7 @@ import { authService } from '@/services/authService.js'
 import { authenticate } from '@/middleware/auth.js'
 import type { ApiResponse, ApiKey, ApiPermission } from '@/types/api.js'
 import type { Request, Response } from 'express'
+import { dataStore, recordApiUsage } from '@/services/dataStore.js'
 
 const router = Router()
 
@@ -27,8 +28,26 @@ router.use(authenticate, requireAdmin)
 
 // GET /admin/keys - List all API keys
 router.get('/keys', (req: Request, res: Response) => {
+  const apiKey = req.apiKey!
+  recordApiUsage(apiKey)
+
   try {
-    const keys = authService.listApiKeys()
+    // Get API keys from data store with usage information
+    const keys = Array.from(dataStore.apiKeys.values()).map(key => {
+      const usage = dataStore.metrics.apiUsage.get(key.key)
+      return {
+        ...key,
+        usage: usage ? {
+          totalRequests: usage.requests,
+          lastRequest: usage.lastRequest ? new Date(usage.lastRequest).toISOString() : null,
+          errorCount: usage.errors
+        } : {
+          totalRequests: 0,
+          lastRequest: null,
+          errorCount: 0
+        }
+      }
+    })
 
     const response: ApiResponse = {
       success: true,
@@ -38,6 +57,7 @@ router.get('/keys', (req: Request, res: Response) => {
 
     res.json(response)
   } catch (error) {
+    recordApiUsage(apiKey, true)
     const response: ApiResponse = {
       success: false,
       error: 'Failed to retrieve API keys',
@@ -49,6 +69,9 @@ router.get('/keys', (req: Request, res: Response) => {
 
 // POST /admin/keys - Create new API key
 router.post('/keys', (req: Request, res: Response) => {
+  const apiKey = req.apiKey!
+  recordApiUsage(apiKey)
+
   try {
     const { name, permissions, rateLimit, origins } = req.body
 
@@ -242,12 +265,15 @@ router.delete('/keys/:keyId', (req: Request, res: Response) => {
 
 // GET /admin/stats - Get admin statistics
 router.get('/stats', (req: Request, res: Response) => {
+  const apiKey = req.apiKey!
+  recordApiUsage(apiKey)
+
   try {
-    const allKeys = authService.getAllApiKeys()
+    const allKeys = Array.from(dataStore.apiKeys.values())
 
     const stats = {
       totalKeys: allKeys.length,
-      activeKeys: allKeys.filter(key => key.isActive).length,
+      activeKeys: allKeys.filter(key => key.active).length,
       adminKeys: allKeys.filter(key => key.permissions.includes('admin')).length,
       recentlyUsed: allKeys.filter(key => {
         if (!key.lastUsed) return false

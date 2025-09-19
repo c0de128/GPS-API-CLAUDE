@@ -9,7 +9,7 @@ import LiveMap from './LiveMap'
 import DemoTripForm from '@/components/demo/DemoTripForm'
 import { DemoTripConfig, LocationData } from '@/types'
 import { geocodingService } from '@/services/geocodingService'
-import { gpsService } from '@/services/gpsService'
+import { gpsService } from '@/services/GPSService'
 
 const TrackingPage: React.FC = () => {
   const [speedUnit] = useState<'mph' | 'kmh'>('mph')

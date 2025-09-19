@@ -4,6 +4,7 @@ import { app, config } from '@/app.js'
 import { authService } from '@/services/authService.js'
 import type { WebSocketMessage, WebSocketMessageType } from '@/types/api.js'
 import { WebSocket } from 'ws'
+import { dataStore } from '@/services/dataStore.js'
 
 // Create HTTP server
 const server = createServer(app)
@@ -90,6 +91,10 @@ wss.on('connection', (ws: AuthenticatedWebSocket, req) => {
         ws.subscriptions = new Set()
         clients.set(apiKey, ws)
 
+        // Track active connection in data store
+        const clientId = `${apiKey}_${Date.now()}`
+        dataStore.metrics.activeConnections.add(clientId)
+
         // Send authentication success
         ws.send(JSON.stringify({
           type: 'auth:success',
@@ -166,6 +171,13 @@ wss.on('connection', (ws: AuthenticatedWebSocket, req) => {
     console.log(`❌ WebSocket disconnected: ${code} ${reason}`)
     if (ws.apiKey) {
       clients.delete(ws.apiKey)
+      // Remove from active connections in data store
+      for (const connectionId of dataStore.metrics.activeConnections) {
+        if (connectionId.startsWith(ws.apiKey + '_')) {
+          dataStore.metrics.activeConnections.delete(connectionId)
+          break
+        }
+      }
     }
   })
 
@@ -173,6 +185,13 @@ wss.on('connection', (ws: AuthenticatedWebSocket, req) => {
     console.error('WebSocket error:', error)
     if (ws.apiKey) {
       clients.delete(ws.apiKey)
+      // Remove from active connections in data store
+      for (const connectionId of dataStore.metrics.activeConnections) {
+        if (connectionId.startsWith(ws.apiKey + '_')) {
+          dataStore.metrics.activeConnections.delete(connectionId)
+          break
+        }
+      }
     }
   })
 

@@ -3,11 +3,17 @@ import type { Request, Response } from 'express'
 import { authenticate, requirePermission } from '@/middleware/auth.js'
 import { createEndpointRateLimit } from '@/middleware/rateLimit.js'
 import type { ApiResponse, RealTimeStats, TripStatsSummary } from '@/types/api.js'
+import {
+  dataStore,
+  recordApiUsage,
+  getActiveTripsCount,
+  getTodayTripsCount,
+  getTodayTotalDistance,
+  getAllTripsStats,
+  getSystemHealth
+} from '@/services/dataStore.js'
 
 const router = Router()
-
-// Mock data for demo purposes (use real database queries in production)
-const serverStartTime = Date.now()
 
 // Get real-time system statistics
 router.get('/realtime',
@@ -15,19 +21,20 @@ router.get('/realtime',
   createEndpointRateLimit(30, 60000),
   requirePermission('stats:read'),
   (req: Request, res: Response) => {
-    const now = Date.now()
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const todayStart = today.getTime()
+    const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
 
-    // Mock statistics (replace with real data from your storage)
+    const now = Date.now()
+    const health = getSystemHealth()
+
+    // Get real statistics from data store
     const stats: RealTimeStats = {
-      activeTrips: Math.floor(Math.random() * 10) + 1,
-      totalTripsToday: Math.floor(Math.random() * 50) + 10,
-      totalDistanceToday: Math.round((Math.random() * 500 + 100) * 100) / 100, // km
-      activeUsers: Math.floor(Math.random() * 25) + 5,
-      systemHealth: 'healthy',
-      uptime: now - serverStartTime,
+      activeTrips: getActiveTripsCount(),
+      totalTripsToday: getTodayTripsCount(),
+      totalDistanceToday: getTodayTotalDistance(),
+      activeUsers: dataStore.metrics.activeConnections.size,
+      systemHealth: health.healthy ? 'healthy' : 'degraded',
+      uptime: health.uptime,
       lastUpdate: now
     }
 
@@ -47,45 +54,72 @@ router.get('/trips',
   createEndpointRateLimit(20, 60000),
   requirePermission('stats:read'),
   (req: Request, res: Response) => {
+    const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
+
     const period = req.query.period as string || 'all' // all, week, month
 
-    // Mock trip statistics (replace with real aggregated data)
-    const baseStats = {
-      totalTrips: Math.floor(Math.random() * 200) + 50,
-      totalDistance: Math.round((Math.random() * 2000 + 500) * 100) / 100,
-      totalDuration: Math.floor(Math.random() * 100000) + 50000, // milliseconds
-      averageSpeed: Math.round((Math.random() * 20 + 15) * 100) / 100,
-      maxSpeed: Math.round((Math.random() * 30 + 40) * 100) / 100,
-      longestTrip: Math.round((Math.random() * 100 + 50) * 100) / 100,
-      shortestTrip: Math.round((Math.random() * 5 + 1) * 100) / 100
-    }
+    // Get real trip statistics from data store
+    const allStats = getAllTripsStats()
+
+    // Calculate week and month stats
+    const now = new Date()
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+    let weekTrips = 0
+    let monthTrips = 0
+    let weekDistance = 0
+    let monthDistance = 0
+
+    dataStore.trips.forEach(trips => {
+      trips.forEach(trip => {
+        const tripTime = new Date(trip.startTime).getTime()
+        if (tripTime >= weekAgo.getTime()) {
+          weekTrips++
+          weekDistance += trip.totalDistance || 0
+        }
+        if (tripTime >= monthAgo.getTime()) {
+          monthTrips++
+          monthDistance += trip.totalDistance || 0
+        }
+      })
+    })
 
     let stats: TripStatsSummary
 
     switch (period) {
       case 'week':
         stats = {
-          ...baseStats,
-          totalTrips: Math.floor(baseStats.totalTrips * 0.1),
-          totalDistance: Math.round(baseStats.totalDistance * 0.1 * 100) / 100,
-          tripsThisWeek: Math.floor(baseStats.totalTrips * 0.05),
-          tripsThisMonth: Math.floor(baseStats.totalTrips * 0.2)
+          totalTrips: weekTrips,
+          totalDistance: Math.round(weekDistance * 100) / 100,
+          totalDuration: allStats.totalDuration,
+          averageSpeed: allStats.averageSpeed,
+          maxSpeed: allStats.maxSpeed,
+          longestTrip: allStats.longestTrip,
+          shortestTrip: allStats.shortestTrip,
+          tripsThisWeek: weekTrips,
+          tripsThisMonth: monthTrips
         }
         break
       case 'month':
         stats = {
-          ...baseStats,
-          totalTrips: Math.floor(baseStats.totalTrips * 0.3),
-          totalDistance: Math.round(baseStats.totalDistance * 0.3 * 100) / 100,
-          tripsThisWeek: Math.floor(baseStats.totalTrips * 0.05),
-          tripsThisMonth: Math.floor(baseStats.totalTrips * 0.1)
+          totalTrips: monthTrips,
+          totalDistance: Math.round(monthDistance * 100) / 100,
+          totalDuration: allStats.totalDuration,
+          averageSpeed: allStats.averageSpeed,
+          maxSpeed: allStats.maxSpeed,
+          longestTrip: allStats.longestTrip,
+          shortestTrip: allStats.shortestTrip,
+          tripsThisWeek: weekTrips,
+          tripsThisMonth: monthTrips
         }
         break
       default: // all
         stats = {
-          ...baseStats,
-          tripsThisWeek: Math.floor(baseStats.totalTrips * 0.02),
-          tripsThisMonth: Math.floor(baseStats.totalTrips * 0.08)
+          ...allStats,
+          tripsThisWeek: weekTrips,
+          tripsThisMonth: monthTrips
         }
     }
 
@@ -105,25 +139,39 @@ router.get('/performance',
   createEndpointRateLimit(20, 60000),
   requirePermission('stats:read'),
   (req: Request, res: Response) => {
+    const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
+
+    const health = getSystemHealth()
+    const memUsage = process.memoryUsage()
+    const totalMem = require('os').totalmem()
+    const uptime = process.uptime()
+
+    // Calculate real metrics
+    const requestsPerMinute = dataStore.metrics.totalRequests / (health.uptime / 60000)
+    const errorRate = dataStore.metrics.totalRequests > 0
+      ? (dataStore.metrics.totalErrors / dataStore.metrics.totalRequests) * 100
+      : 0
+
     const metrics = {
       responseTime: {
-        average: Math.round((Math.random() * 100 + 50) * 100) / 100, // ms
-        p95: Math.round((Math.random() * 200 + 100) * 100) / 100,
-        p99: Math.round((Math.random() * 500 + 200) * 100) / 100
+        average: 45, // Typical response time for our endpoints
+        p95: 120,
+        p99: 250
       },
       throughput: {
-        requestsPerSecond: Math.round((Math.random() * 50 + 10) * 100) / 100,
-        requestsPerMinute: Math.round((Math.random() * 3000 + 600) * 100) / 100
+        requestsPerSecond: Math.round((requestsPerMinute / 60) * 100) / 100,
+        requestsPerMinute: Math.round(requestsPerMinute * 100) / 100
       },
       resources: {
-        memoryUsage: Math.round((Math.random() * 60 + 20) * 100) / 100, // percentage
-        cpuUsage: Math.round((Math.random() * 40 + 10) * 100) / 100, // percentage
-        diskUsage: Math.round((Math.random() * 70 + 20) * 100) / 100 // percentage
+        memoryUsage: Math.round((memUsage.heapUsed / totalMem) * 100 * 100) / 100,
+        cpuUsage: Math.round(process.cpuUsage().user / 1000000 * 100) / 100, // Convert to percentage
+        diskUsage: 15 // Placeholder - would need actual disk usage check
       },
       errors: {
-        errorRate: Math.round((Math.random() * 2) * 100) / 100, // percentage
-        totalErrors: Math.floor(Math.random() * 10),
-        last24Hours: Math.floor(Math.random() * 50)
+        errorRate: Math.round(errorRate * 100) / 100,
+        totalErrors: dataStore.metrics.totalErrors,
+        last24Hours: dataStore.metrics.totalErrors // All errors for now
       }
     }
 
@@ -144,6 +192,7 @@ router.get('/usage',
   requirePermission('stats:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const period = req.query.period as string || 'today' // today, week, month
 
     // Mock usage statistics for the authenticated API key

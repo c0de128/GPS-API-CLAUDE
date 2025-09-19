@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { LocationData, GPSState, DemoTripConfig, DemoSimulationState } from '@/types'
-import { gpsService } from '@/services/gpsService'
+import { gpsService } from '@/services/GPSService'
 import { DemoTripSimulator } from '@/services/demoTripSimulator'
 
 export interface UseGPSReturn {

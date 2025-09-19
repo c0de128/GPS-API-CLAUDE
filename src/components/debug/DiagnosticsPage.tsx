@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { monitoring, useMonitoring } from '@/utils/monitoring'
 import { storageService } from '@/services/storageService'
-import { gpsService } from '@/services/gpsService'
+import { gpsService } from '@/services/GPSService'
 
 const DiagnosticsPage: React.FC = () => {
   const navigate = useNavigate()

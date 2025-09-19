@@ -3,12 +3,9 @@ import type { Request, Response } from 'express'
 import { authenticate, requirePermission, optionalAuth } from '@/middleware/auth.js'
 import { createEndpointRateLimit } from '@/middleware/rateLimit.js'
 import type { ApiResponse, GpsLocationUpdate, GpsStatus } from '@/types/api.js'
+import { dataStore, recordApiUsage, addGpsLocation } from '@/services/dataStore.js'
 
 const router = Router()
-
-// In-memory storage for demo purposes (use Redis/database in production)
-const gpsData = new Map<string, GpsLocationUpdate[]>()
-const gpsStatus = new Map<string, GpsStatus>()
 
 // Helper function to generate simulated GPS coordinates for testing
 function generateSimulatedLocation(): GpsLocationUpdate {
@@ -38,32 +35,14 @@ router.get('/location',
   requirePermission('gps:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const simulate = req.query.simulate === 'true' || req.query.sim === 'true'
-    let currentLocation = gpsData.get(apiKey)?.slice(-1)[0]
+    let currentLocation = dataStore.gpsLocations.get(apiKey)?.slice(-1)[0]
 
     // Generate fresh simulated data if requested, or if no real data exists
     if (simulate || !currentLocation) {
       currentLocation = generateSimulatedLocation()
-
-      // Store the simulated location so it appears in history
-      if (!gpsData.has(apiKey)) {
-        gpsData.set(apiKey, [])
-      }
-      gpsData.get(apiKey)!.push(currentLocation)
-
-      // Keep only last 1000 locations per API key
-      const locations = gpsData.get(apiKey)!
-      if (locations.length > 1000) {
-        locations.splice(0, locations.length - 1000)
-      }
-
-      // Update GPS status to show tracking is active
-      gpsStatus.set(apiKey, {
-        isTracking: true,
-        permission: 'granted',
-        lastUpdate: currentLocation.timestamp,
-        accuracy: currentLocation.accuracy
-      })
+      addGpsLocation(apiKey, currentLocation)
     }
 
     const response: ApiResponse<GpsLocationUpdate> = {
@@ -83,10 +62,11 @@ router.get('/location/history',
   requirePermission('gps:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000)
     const offset = parseInt(req.query.offset as string) || 0
 
-    const locations = gpsData.get(apiKey) || []
+    const locations = dataStore.gpsLocations.get(apiKey) || []
     const paginatedLocations = locations.slice(offset, offset + limit)
 
     const response: ApiResponse<{
@@ -116,10 +96,12 @@ router.post('/location',
   requirePermission('gps:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
     const locationUpdate: GpsLocationUpdate = req.body
 
     // Validate required fields
     if (!locationUpdate.latitude || !locationUpdate.longitude || !locationUpdate.accuracy) {
+      recordApiUsage(apiKey, true)
       const response: ApiResponse = {
         success: false,
         error: 'Missing required fields: latitude, longitude, accuracy',
@@ -133,26 +115,8 @@ router.post('/location',
       locationUpdate.timestamp = Date.now()
     }
 
-    // Store location data
-    if (!gpsData.has(apiKey)) {
-      gpsData.set(apiKey, [])
-    }
-
-    const locations = gpsData.get(apiKey)!
-    locations.push(locationUpdate)
-
-    // Keep only last 1000 locations per API key
-    if (locations.length > 1000) {
-      locations.splice(0, locations.length - 1000)
-    }
-
-    // Update GPS status
-    gpsStatus.set(apiKey, {
-      isTracking: true,
-      permission: 'granted',
-      lastUpdate: locationUpdate.timestamp,
-      accuracy: locationUpdate.accuracy
-    })
+    // Store location data using data store
+    addGpsLocation(apiKey, locationUpdate)
 
     const response: ApiResponse<GpsLocationUpdate> = {
       success: true,
@@ -171,7 +135,8 @@ router.get('/status',
   requirePermission('gps:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
-    const status = gpsStatus.get(apiKey) || {
+    recordApiUsage(apiKey)
+    const status = dataStore.gpsStatus.get(apiKey) || {
       isTracking: false,
       permission: 'unknown' as const,
       error: 'No GPS data available'
@@ -194,8 +159,9 @@ router.post('/start',
   requirePermission('gps:read'),
   (req: Request, res: Response) => {
     const apiKey = req.apiKey!
+    recordApiUsage(apiKey)
 
-    gpsStatus.set(apiKey, {
+    dataStore.gpsStatus.set(apiKey, {
       isTracking: true,
       permission: 'granted',
       lastUpdate: Date.now()

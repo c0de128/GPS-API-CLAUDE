@@ -188,52 +188,64 @@ export class GPSService {
     try {
       monitoring.logGPSEvent('Location update received', { accuracy: position.coords.accuracy })
 
-    const newLocation: LocationData = {
-      latitude: position.coords.latitude,
-      longitude: position.coords.longitude,
-      accuracy: position.coords.accuracy,
-      timestamp: position.timestamp,
-      altitude: position.coords.altitude || undefined,
-      heading: position.coords.heading || undefined,
-      speed: position.coords.speed || undefined
-    }
-
-    // Calculate speed if we have a previous location
-    let calculatedSpeed = 0
-    if (this.previousLocation) {
-      calculatedSpeed = calculateSpeed(
-        this.previousLocation.latitude,
-        this.previousLocation.longitude,
-        this.previousLocation.timestamp,
-        newLocation.latitude,
-        newLocation.longitude,
-        newLocation.timestamp
-      )
-
-      // Store speed data
-      const speedData: SpeedData = {
-        speed: calculatedSpeed,
-        timestamp: newLocation.timestamp,
-        location: newLocation,
-        accuracy: newLocation.accuracy
+      const newLocation: LocationData = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        timestamp: position.timestamp,
+        altitude: position.coords.altitude || undefined,
+        heading: position.coords.heading || undefined,
+        speed: position.coords.speed || undefined
       }
 
-      this.speedHistory.push(speedData)
+      console.log('🌍 GPSService: Live GPS update received', {
+        lat: newLocation.latitude.toFixed(6),
+        lng: newLocation.longitude.toFixed(6),
+        accuracy: newLocation.accuracy,
+        timestamp: new Date(newLocation.timestamp).toISOString()
+      })
 
-      // Keep only recent speed data (last 100 readings) to prevent memory leak
-      if (this.speedHistory.length > 100) {
-        this.speedHistory = this.speedHistory.slice(-100)
+      // Calculate speed if we have a previous location
+      let calculatedSpeed = 0
+      if (this.previousLocation) {
+        calculatedSpeed = calculateSpeed(
+          this.previousLocation.latitude,
+          this.previousLocation.longitude,
+          this.previousLocation.timestamp,
+          newLocation.latitude,
+          newLocation.longitude,
+          newLocation.timestamp
+        )
+
+        // Store speed data
+        const speedData: SpeedData = {
+          speed: calculatedSpeed,
+          timestamp: newLocation.timestamp,
+          location: newLocation,
+          accuracy: newLocation.accuracy
+        }
+
+        this.speedHistory.push(speedData)
+
+        // Keep only recent speed data (last 100 readings) to prevent memory leak
+        if (this.speedHistory.length > 100) {
+          this.speedHistory = this.speedHistory.slice(-100)
+        }
       }
-    }
 
-    this.previousLocation = newLocation
-    this.updateState({
-      currentLocation: newLocation,
-      error: null
-    })
+      this.previousLocation = newLocation
+      this.updateState({
+        currentLocation: newLocation,
+        error: null
+      })
 
-    // Check if we should record this location for trip recording (5-second interval)
-    this.checkTripRecording(newLocation)
+      // Send location to API for live tracking
+      this.sendLocationToAPI(newLocation).catch(error => {
+        console.warn('🔌 Failed to send live location to API:', error.message)
+      })
+
+      // Check if we should record this location for trip recording (2-second interval)
+      this.checkTripRecording(newLocation)
     } finally {
       this.updateLock = false
     }
@@ -363,18 +375,35 @@ export class GPSService {
   // Check if we should record this location for trip recording (2-second throttling)
   private checkTripRecording(location: LocationData): void {
     const now = Date.now()
+    const timeSinceLastRecord = this.lastRecordTime === 0 ? 0 : (now - this.lastRecordTime)
 
     // Record if this is the first location or if 2 seconds have passed
-    if (this.lastRecordTime === 0 || (now - this.lastRecordTime) >= this.recordingInterval) {
+    if (this.lastRecordTime === 0 || timeSinceLastRecord >= this.recordingInterval) {
+      console.log('📍 GPSService: Recording location for trip', {
+        isFirstLocation: this.lastRecordTime === 0,
+        timeSinceLastRecord,
+        lat: location.latitude.toFixed(6),
+        lng: location.longitude.toFixed(6),
+        listenersCount: this.tripRecordingListeners.size
+      })
+
       this.lastRecordedLocation = location
       this.lastRecordTime = now
 
       // Notify all trip recording listeners
-      this.tripRecordingListeners.forEach(listener => listener(location))
+      this.tripRecordingListeners.forEach(listener => {
+        console.log('📍 GPSService: Notifying trip recording listener')
+        listener(location)
+      })
 
       monitoring.logGPSEvent('Location recorded for trip', {
-        interval: now - this.lastRecordTime,
+        interval: timeSinceLastRecord,
         accuracy: location.accuracy
+      })
+    } else {
+      console.log('📍 GPSService: Skipping location (throttled)', {
+        timeSinceLastRecord,
+        requiredInterval: this.recordingInterval
       })
     }
   }
