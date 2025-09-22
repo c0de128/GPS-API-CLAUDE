@@ -176,3 +176,9 @@ NODE_ENV=development                      # development | production
 - **Logging**: `src/utils/logger.ts` - Structured logging with different levels
 - **Error Handling**: `src/utils/errorHandler.ts` - Centralized error management
 - **Input Validation**: `src/utils/inputValidation.ts` - Data sanitization and validation
+
+## Additional Notes
+- **Component Organization**: UI components are organized in `src/components/` by feature (tracking, trips, replay, api-settings, etc.)
+- **Type Safety**: Strict TypeScript configuration with no unused variables/parameters enforcement
+- **Build Optimization**: Vite build system with sourcemaps enabled for debugging
+- **Security Headers**: CSP and security headers configured in vite.config.ts for production deployment

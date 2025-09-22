@@ -47,7 +47,8 @@
       "Bash(awk:*)",
       "Bash(xargs kill:*)",
       "Bash(/bashes)",
-      "Read(//c/_dev/**)"
+      "Read(//c/_dev/**)",
+      "Bash(start http://localhost:3000)"
     ],
     "deny": [],
     "ask": []
