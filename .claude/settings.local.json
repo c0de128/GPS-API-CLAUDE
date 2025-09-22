@@ -48,7 +48,10 @@
       "Bash(xargs kill:*)",
       "Bash(/bashes)",
       "Read(//c/_dev/**)",
-      "Bash(start http://localhost:3000)"
+      "Bash(start http://localhost:3000)",
+      "Bash(chmod:*)",
+      "Bash(git submodule add:*)",
+      "Bash(git gc:*)"
     ],
     "deny": [],
     "ask": []

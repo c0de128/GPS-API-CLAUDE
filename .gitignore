@@ -157,9 +157,32 @@ api-server/.env
 api-server/.env.*
 
 # MCP server (handled as submodule or separate repo)
+# Environment files for MCP server
 augments-mcp-server/.env
 augments-mcp-server/.env.*
-augments-mcp-server/node_modules/
+# Python virtual environment in MCP server
+augments-mcp-server/.venv/
+augments-mcp-server/__pycache__/
+augments-mcp-server/*.pyc
+augments-mcp-server/.git/
+augments-mcp-server/uv.lock
+
+# Large binary files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.ico
+*.pdf
+*.zip
+*.tar.gz
+*.rar
+
+# Package manager lock files (optional for development repos)
+# Exclude package-lock.json files to reduce repository size
+package-lock.json
+api-server/package-lock.json
 
 # Logs
 logs
